@@ -1,0 +1,72 @@
+\documentclass[12pt]{article}
+
+\usepackage{scicite}
+
+\usepackage{times}
+
+\usepackage{amsmath, amssymb}
+\usepackage[dvipdfmx]{graphicx}
+\usepackage{tabularx, moreverb}
+\usepackage{mathrsfs}
+\usepackage{theorem}
+\usepackage{comment}
+
+\newtheorem{Definition}{Definition}[section]
+\newtheorem{Property}{Property}[section]
+\newtheorem{Corollary}{Corollary}[section]
+\newtheorem{Lemma}{Lemma}[section]
+\newtheorem{Claim}{Claim}[section]
+\newtheorem{Proof}{Proof.}
+
+\renewcommand{\theProof}{}
+\usepackage{lscape}
+\usepackage{bussproofs}
+
+\DeclareMathAlphabet{\mathpzc}{OT1}{pzc}{m}{it}
+
+\topmargin 0.0cm
+\oddsidemargin 0.2cm
+\textwidth 16cm 
+\textheight 21cm
+\footskip 1.0cm
+
+\newenvironment{sciabstract}{
+\begin{quote} \bf}
+{\end{quote}}
+
+\renewcommand\refname{References and Notes}
+
+
+\newcounter{lastnote}
+\newenvironment{scilastnote}{
+\setcounter{lastnote}{\value{enumiv}}
+\addtocounter{lastnote}{+1}
+\begin{list}
+{\arabic{lastnote}.}
+{\setlength{\leftmargin}{.22in}}
+{\setlength{\labelsep}{.5em}}}
+{\end{list}}
+
+
+\title{Raskal, the PASCAL like rational typed procedural language}
+
+\author
+{Nobody,$^{1\ast}$Somebody,$^{1}$Anybody$^{1}$\\
+\\
+\normalsize{$^{1}$SOMETHING CONSTRUCTIVE  CO., LTD. Tokyo Japan}\\
+\normalsize{$^\ast$To whom correspondence should be addressed;
+  E-mail: noname@nowhere.com.}
+}
+
+\date{}
+
+
+%%%%%%%%%%%%%%%%% END OF PREAMBLE %%%%%%%%%%%%%%%%
+
+
+
+\begin{document}
+\maketitle
+a
+\end{document}
+
