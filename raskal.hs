@@ -1,5 +1,4 @@
-
-import Data.Char
+import Data.Charp
 
 
 data Ras_Error =
@@ -200,12 +199,13 @@ data Mediate_code_fragment_raw =
 
 
 is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
-  case ty1 of
-    Ras_Top_type -> (ty2 == Ras_Top_type)
-    Ras_Integer -> (ty2 == Ras_Integer) || (ty2 == Ras_Real) || (ty2 == Ras_Top_type)
-    Ras_Real -> (ty2 == Ras_Real) || (ty2 == Ras_Top_type)
-    Ras_String -> (ty2 == Ras_String) || (ty2 == Ras_Top_type)
-    Ras_Bottom_type -> True
+  case ty2 of
+    Ras_Top_type -> True
+    Ras_Integer -> (ty1 == Ras_Integer) || (ty1 == Ras_Bottom_type)
+    Ras_Real -> (ty1 == Ras_Integer) || (ty1 == Ras_Real) || (ty1 == Ras_Bottom_type)
+    Ras_String -> (ty1 == Ras_Char) || (ty1 == Ras_String) || (ty1 == Ras_Bottom_type)
+    Ras_Char -> (ty1 == Ras_Char) || (ty1 == Ras_Bottom_type)
+    Ras_Bottom_type -> (ty1 == Ras_Bottom_type)
     _ -> False
 
 
@@ -233,7 +233,7 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
                             Mediate_code_raw_Var var -> let ty_l = tyinf lvalue
                                                             ty_r = tyinf rvalue
                                                         in
-                                                          if (ty_l == Ras_Top_type) then
+                                                          if (ty_l == Ras_Bottom_type) then
                                                             let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
                                                             in  
                                                               (expr{operand_0 = lvalue'}, Nothing)
@@ -360,7 +360,7 @@ par_var acc symtbl (row, col) tokens =
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (NUM_CONST c)):ts' ->
-                                           let rs = map (tychk (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const c}))) vars
+                                           let rs = map (tychk (row', col') . folding  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const c}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'

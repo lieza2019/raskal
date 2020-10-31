@@ -67,6 +67,104 @@
 
 \begin{document}
 \maketitle
-a
+
+\begin{displaymath}
+  \begin{array}{c}
+    \begin{array}{rl}
+      \dfrac{
+        \dfrac{}{
+          \raisebox{0.6ex}[2.3ex][0ex]{
+            $n \!\in\! \mathbb{I}$
+          }
+        }
+      }{
+        \{x : \text{\it Integer} \} \vdash \mathsf{var}\ x :: \mathsf{Integer} := n
+      }
+      & \dfrac{
+          \dfrac{}{
+            \raisebox{0.6ex}[2.3ex][0ex]{
+              $n \!\in\! \mathbb{I}$
+            }
+          }
+        }{
+          \{x : \text{\it Integer} \} \vdash \mathsf{var}\ x := n
+        }
+    \end{array}  \\
+    \\
+    
+    \begin{array}{rl}
+      \dfrac{
+        \dfrac{}{
+          \raisebox{0.6ex}[2.3ex][0ex]{
+            $r \!\in\! \mathbb{R}$
+          }
+        }
+      }{
+        \{x : \text{\it Real} \} \vdash \mathsf{var}\ x :: \mathsf{Real} := r
+      }
+      & \dfrac{
+          \dfrac{}{
+            \raisebox{0.6ex}[2.3ex][0ex]{
+              $r \!\in\! \mathbb{R}$
+            }
+          }
+        }{
+          \{x : \text{\it Real} \} \vdash \mathsf{var}\ x := r
+        }
+    \end{array}  \\
+    \\
+    
+    \begin{array}{rl}
+      \dfrac{
+        \dfrac{}{
+          \raisebox{0.6ex}[2.3ex][0ex]{
+            $s \!\in\! \mathbb{S}$
+          }
+        }
+      }{
+        \{x : \text{\it String} \} \vdash \mathsf{var}\ x :: \mathsf{String} := s
+      }
+      & \dfrac{
+          \dfrac{}{
+            \raisebox{0.6ex}[2.3ex][0ex]{
+              $s \!\in\! \mathbb{S}$
+            }
+          }
+        }{
+          \{x : \text{\it String} \} \vdash \mathsf{var}\ x := s
+        }
+    \end{array}  \\
+    \\
+    
+    \begin{array}{rl}
+      \dfrac{
+        \dfrac{}{
+          \raisebox{0.6ex}[2.3ex][0ex]{
+            $c \!\in\! \mathbb{C}$
+          }
+        }
+      }{
+        \{x : \text{\it Char} \} \vdash \mathsf{var}\ x :: \mathsf{Char} := c
+      }
+      & \dfrac{
+          \dfrac{}{
+            \raisebox{0.6ex}[2.3ex][0ex]{
+              $c \!\in\! \mathbb{C}$
+            }
+          }
+        }{
+          \{x : \text{\it Char} \} \vdash \mathsf{var}\ x := c
+        }
+    \end{array}  \\
+    \\
+
+    \begin{array}{c}
+      \dfrac{}{
+        \{x : \text{\it Bot} \} \vdash \mathsf{var}\ x
+      }
+    \end{array}
+  \end{array}
+\end{displaymath}
+
 \end{document}
 
