@@ -70,26 +70,22 @@
 
 \begin{displaymath}
   \begin{array}{c}
-    \begin{array}{rl}
-      \dfrac{
-        \dfrac{}{
-          \raisebox{0.6ex}[2.3ex][0ex]{
-            $n \!\in\! \mathbb{I}$
-          }
-        }
-      }{
-        \{x : \text{\it Integer} \} \vdash \mathsf{var}\ x :: \mathsf{Integer} := n
-      }
-      & \dfrac{
-          \dfrac{}{
-            \raisebox{0.6ex}[2.3ex][0ex]{
-              $n \!\in\! \mathbb{I}$
-            }
-          }
-        }{
-          \{x : \text{\it Integer} \} \vdash \mathsf{var}\ x := n
-        }
-    \end{array}  \\
+    \dfrac{
+      n \!\in\! \mathbb{I} \quad
+      \{x : \text{\it Integer} \} \cup \Gamma' \vdash \text{\it statements}
+    }{
+      \{x : \text{\it Integer} \} \cup \Gamma' \vdash \mathsf{var}\ x ::
+       \mathsf{Integer} := n ;\ \text{\it statements}
+    }  \\
+    \\
+    
+    \dfrac{
+      n \!\in\! \mathbb{I} \quad
+      \{x : \text{\it Integer} \} \cup \Gamma' \vdash \text{\it statements}
+    }{
+      \{x : \text{\it Integer} \} \cup \Gamma' \vdash \mathsf{var}\ x :=
+       n;\ \text{\it statements}
+    }  \\
     \\
     
     \begin{array}{rl}
@@ -161,6 +157,28 @@
     \begin{array}{c}
       \dfrac{}{
         \{x : \text{\it Bot} \} \vdash \mathsf{var}\ x
+      }
+    \end{array}  \\
+    \\
+
+    \begin{array}{c}
+      \dfrac{
+        \begin{array}{l}
+          \bigl\{x : \{l_1:T_1, \cdots ,l_n:T_n\} \bigr\} \cup
+          \Gamma'_j \vdash v_j : T'_j,\ T'_j <: T_j\ \text{\it s.t.}\
+          1 \le j \le m,\ m \le n  \\
+          \bigl\{x : \{l_1:T_1, \cdots ,l_n:T_n\} \bigr\} \cup \Gamma''
+          \vdash \text{\it statements}
+        \end{array}
+      }{
+        \begin{array}{r}
+          \bigl\{x : \{l_1:T_1, \cdots ,l_n:T_n\} \bigr\} \cup \bigl(
+          \bigcup_{j=1}^m \Gamma_j \bigr) \cup \Gamma'' \vdash
+          \mathsf{var}\ x :: \{l_1:T_1,\cdots ,l_n:T_n\} := v;\
+          \text{\it statements}  \\
+          \text{\it where}\ v = \{ l_1:v_1,\cdots ,l_m:v_m,\
+          l_{m+1}:v_{0_{m+1}},\cdots ,l_n:v_{0_n} \}
+        \end{array}
       }
     \end{array}
   \end{array}
