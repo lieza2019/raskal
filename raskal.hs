@@ -257,7 +257,7 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
 
 data Sym_attrib =
   Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
-  | Attrib_Rec ([Ras_Record_field], Mediate_code_fragment_raw)
+  | Attrib_Rec {attr_decl :: [Ras_Record_field], attr_fragment :: Mediate_code_fragment_raw}
   deriving (Eq, Ord, Show)
 
 data Symtbl_node =
@@ -313,7 +313,7 @@ sym_regist1 ovwt symtbl contents fragment =
       in
         reg_sym v_id node
     Sym_record (rec_ident, fields) ->
-      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Attrib_Rec (fields, fragment)}
+      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Attrib_Rec {attr_decl = fields, attr_fragment = fragment}}
       in
         reg_sym rec_ident node
 
