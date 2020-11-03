@@ -313,12 +313,12 @@ sym_regist ovwt symtbl decl@Mediate_code_var{var_ident = v_id, var_type = v_ty, 
                                       )
 
 
-data Sym_contents =
+data Sym_entity =
   Sym_var Mediate_code_var
   | Sym_record (String, [Ras_Record_field])
     deriving (Eq, Ord, Show)
 
-sym_regist1 ovwt symtbl contents fragment =
+sym_regist1 ovwt symtbl entity fragment =
   let reg_sym ident sym =
         case symtbl of
           Scope_empty -> ((Scope_add (0, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
@@ -330,7 +330,7 @@ sym_regist1 ovwt symtbl contents fragment =
                                                                Nothing -> ((Scope_add (lv, (Sym_add sym syms)) symtbl'), Nothing) )
                                           )
   in
-  case contents of
+  case entity of
     Sym_var decl@(Mediate_code_var {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
       let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
       in
@@ -376,7 +376,7 @@ par_var acc symtbl (row, col) tokens =
           let def_and_reg symtbl [] = (symtbl, [])
               def_and_reg symtbl ((Mediate_code_raw_Bin {operand_0 = lvalue}):es) = (case lvalue of
                                                                                        Mediate_code_raw_Var var ->
-                                                                                         let (symtbl', r) = sym_regist False symtbl var lvalue
+                                                                                         let (symtbl', r) = sym_regist1 False symtbl (Sym_var var) lvalue
                                                                                          in
                                                                                            (case r of
                                                                                               Nothing -> (case (def_and_reg symtbl' es) of
@@ -468,7 +468,7 @@ par_asgn symtbl ((row, col), ident) tokens =
            ((row', col'), ASGN):ts ->
              let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
                    case lvalue of
-                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl var lvalue
+                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist1 True symtbl (Sym_var var) lvalue
                                                  in
                                                    (case r of
                                                       Nothing -> (expr_asgn, symtbl', Nothing)
