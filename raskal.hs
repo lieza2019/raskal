@@ -49,8 +49,10 @@ data Ras_Types =
   | Ras_String
   | Ras_Char
   | Ras_Record [Ras_Record_field]
+  | Ras_Deftype
   | Ras_Bottom_type
   | Ras_Unknown_type
+  | Ras_Illformed_type
   deriving (Eq, Ord, Show)
 
 
@@ -192,18 +194,18 @@ par_real_const tk_past tokens =
       (t:ts) -> (is_valid tk_past) ++ (par_real_const t ts)
 
 
-data Mediate_code_var =
-  Mediate_code_var {var_ident :: String, var_type :: Ras_Types, var_const :: Ras_Const}
-  deriving (Eq, Ord, Show)
-
 data Mediate_code_mnemonic =
   Mn_asgn
+  deriving (Eq, Ord, Show)
+
+data Mediate_var_attr =
+  Mediate_var_attr {var_ident :: String, var_type :: Ras_Types, var_const :: Ras_Const}
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
   Mediate_code_fragment_raw_None
   | Mediate_code_raw_Bin {mnemonic :: Mediate_code_mnemonic, operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
-  | Mediate_code_raw_Var Mediate_code_var
+  | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Literal Ras_Const
   deriving (Eq, Ord, Show)
 
@@ -255,13 +257,8 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
     _ -> (expr, Nothing)
 
 
-{- data Sym_attrib =
-  Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
-  | Attrib_Rec {attr_decl :: [Ras_Record_field], attr_fragment :: Mediate_code_fragment_raw}
-  deriving (Eq, Ord, Show) -}
-
 data Sym_attr_type =
-  Attrib_Var Mediate_code_var
+  Attrib_Var Mediate_var_attr
   | Attrib_Rec [Ras_Record_field]
   deriving (Eq, Ord, Show)
 
@@ -269,10 +266,14 @@ data Sym_attrib =
   Sym_attrib {attr_decl :: Sym_attr_type, attr_fragment :: Mediate_code_fragment_raw}
   deriving (Eq, Ord, Show)
 
-
 data Symtbl_node =
   Sym_entry {sym_ident :: String, sym_attrib :: Sym_attrib}
   deriving (Eq, Ord, Show)
+
+data Sym_entity =
+  Sym_var Mediate_var_attr
+  | Sym_record (String, [Ras_Record_field])
+    deriving (Eq, Ord, Show)
 
 data Symtbl_cluster =
   Sym_empty
@@ -299,26 +300,7 @@ sym_search symtbl tgt_id =
                                       Nothing -> sym_search symtbl' tgt_id )
 
 
-sym_regist ovwt symtbl decl@Mediate_code_var{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
-  let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
-  in
-    case symtbl of
-      Scope_empty -> ((Scope_add (0, (Sym_add node Sym_empty)) Scope_empty), Nothing)
-      Scope_add (lv, syms) symtbl' -> (case syms of
-                                         Sym_empty -> ((Scope_add (lv, (Sym_add node Sym_empty)) symtbl'), Nothing)
-                                         Sym_add _ _ -> (case (walk_on_scope syms v_id) of
-                                                           Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
-                                                                     else ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing)
-                                                           Nothing -> ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing) )
-                                      )
-
-
-data Sym_entity =
-  Sym_var Mediate_code_var
-  | Sym_record (String, [Ras_Record_field])
-    deriving (Eq, Ord, Show)
-
-sym_regist1 ovwt symtbl entity fragment =
+sym_regist ovwt symtbl entity fragment =
   let reg_sym ident sym =
         case symtbl of
           Scope_empty -> ((Scope_add (0, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
@@ -331,7 +313,7 @@ sym_regist1 ovwt symtbl entity fragment =
                                           )
   in
   case entity of
-    Sym_var decl@(Mediate_code_var {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
+    Sym_var decl@(Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
       let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
       in
         reg_sym v_id node
@@ -339,6 +321,25 @@ sym_regist1 ovwt symtbl entity fragment =
       let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec fields, attr_fragment = fragment}}
       in
         reg_sym rec_ident node
+
+
+{- data Sym_attrib =
+  Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
+  | Attrib_Rec {attr_decl :: [Ras_Record_field], attr_fragment :: Mediate_code_fragment_raw}
+  deriving (Eq, Ord, Show)
+
+sym_regist ovwt symtbl decl@Mediate_var_attr{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
+  let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
+  in
+    case symtbl of
+      Scope_empty -> ((Scope_add (0, (Sym_add node Sym_empty)) Scope_empty), Nothing)
+      Scope_add (lv, syms) symtbl' -> (case syms of
+                                         Sym_empty -> ((Scope_add (lv, (Sym_add node Sym_empty)) symtbl'), Nothing)
+                                         Sym_add _ _ -> (case (walk_on_scope syms v_id) of
+                                                           Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
+                                                                     else ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing)
+                                                           Nothing -> ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing) )
+                                      ) -}
 
 
 enter_scope symtbl =
@@ -376,7 +377,7 @@ par_var acc symtbl (row, col) tokens =
           let def_and_reg symtbl [] = (symtbl, [])
               def_and_reg symtbl ((Mediate_code_raw_Bin {operand_0 = lvalue}):es) = (case lvalue of
                                                                                        Mediate_code_raw_Var var ->
-                                                                                         let (symtbl', r) = sym_regist1 False symtbl (Sym_var var) lvalue
+                                                                                         let (symtbl', r) = sym_regist False symtbl (Sym_var var) lvalue
                                                                                          in
                                                                                            (case r of
                                                                                               Nothing -> (case (def_and_reg symtbl' es) of
@@ -426,7 +427,7 @@ par_var acc symtbl (row, col) tokens =
       [] -> (acc, symtbl, [], Just [(Par_error ((row, col), Illformed_Declarement))])
       t:ts -> (case t of
                  ((row, col), IDENT v_ident) ->
-                   let vars = acc ++ [Mediate_code_raw_Var (Mediate_code_var {var_ident = v_ident,
+                   let vars = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_ident = v_ident,
                                                                               var_type = Ras_Bottom_type,
                                                                               var_const = Ras_Const_not_defined})]
                    in
@@ -468,7 +469,7 @@ par_asgn symtbl ((row, col), ident) tokens =
            ((row', col'), ASGN):ts ->
              let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
                    case lvalue of
-                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist1 True symtbl (Sym_var var) lvalue
+                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl (Sym_var var) lvalue
                                                  in
                                                    (case r of
                                                       Nothing -> (expr_asgn, symtbl', Nothing)
@@ -500,6 +501,56 @@ par_asgn symtbl ((row, col), ident) tokens =
         )
 
 
+par_record symtbl tokens =
+  let decl_fields acc symtbl (r0, c0) tokens =
+        let decl_type symtbl tokens =
+              case tokens of
+                (_, BOOLEAN):ts -> (Ras_Boolean, symtbl, ts, Nothing)
+                (_, INTEGER):ts -> (Ras_Integer, symtbl, ts, Nothing)
+                (_, REAL):ts -> (Ras_Real, symtbl, ts, Nothing)
+                (_, STRING):ts -> (Ras_String, symtbl, ts, Nothing)
+                (_, CHAR):ts -> (Ras_Char, symtbl, ts, Nothing)
+                ((row, col), RECORD):ts -> (case (par_record symtbl tokens) of
+                                              (r_ident, symtbl', ts', Nothing) ->
+                                                (case (sym_search symtbl' r_ident) of
+                                                   Just found{attr_decl = r_def} -> (r_def, symtbl', ts', Nothing)
+                                                   Nothing -> (Ras_Unknown_type, symtbl', ts', Just [(Par_error ((row, col), Compiler_internal_error))]) )
+                                              (_, symtbl', ts', err) -> (Ras_Illformed_type, symtbl', ts', err)
+                                           )
+                ((row, col), IDENT t_ident):ts -> (case (sym_search symtbl t_ident) of
+                                                     Just found{attr_decl = t_def} -> (t_def, symtbl, ts, Nothing)
+                                                     Nothing -> (Ras_Unknown_type, symtbl, ts, Just [(Par_error ((row, col), Illformed_Declarement))]) )
+                ((row, col), _):ts -> (Ras_Illformed_type, symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
+        in
+          case tokens of
+            ((row, col), IDENT f_ident):ts ->
+              (case ts of
+                 ((row', col'), COLON):ts' -> (case (decl_type symtbl ts') of
+                                                 (f_type, Symtbl', ts', Nothing) ->
+                                                   let acc' = acc ++ Ras_Record_field {memb_ident = f_ident, memb_type = f_type}
+                                                   in
+                                                     case ts' of
+                                                       ((row'', col''), SEMICOL):ts'' -> decl_fields acc' symtbl' (row'' col'') ts''
+                                                       _ -> (acc', symtbl', ts')
+                                              )
+                 ((row', col'), _):ts' -> (acc, symtbl, ts, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                 _ -> (acc, symtbl, [], Just [(Par_error ((row, col), Illformed_Declarement))])
+              )
+            ((row, col), _):ts -> (acc, symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
+            _ -> (acc, symtbl, [], Just [(Par_error ((r0, c0), Illformed_Declarement))])
+  in
+    case tokens of
+      ((row, col), RECORD):ts ->
+        case ts of
+          ((row, col), LBRA):ts' -> (case (decl_fields [] ts' symtbl (row, col) ts') of
+                                       (fields, symtbl', tokens', Nothing) ->
+                                         (case tokens' of
+                                             ((row'', col''), RBRA):ts'' -> sym_regist False symtbl (Sym_record (r_ident, fields)) fragment
+                                             ((row'', col''), _):ts'' -> 
+          _ -> (symtbl, ts, [(Par_error ((row, col), Illformed_Declarement))])
+      _ -> (symtbl, tokens, Par_error Just [(Par_error ((r0, c0), Illformed_Declarement))])
+
+
 ras_parse forest symtbl tokens error =
   let append_err err1 err2 =
         case err1 of
@@ -515,6 +566,7 @@ ras_parse forest symtbl tokens error =
     case tokens of
       [] -> (forest, symtbl, [], error)
       t:ts -> case t of
+                -- ((r, c), RECORD) -> 
                 ((r, c), VAR) -> go_on (par_var [] symtbl (r, c) ts)
                 ((r, c), IDENT v_ident) -> go_on (par_asgn symtbl ((r, c), v_ident) tokens)
                 _ -> ras_parse forest symtbl (panicked tokens) error
