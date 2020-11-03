@@ -70,6 +70,28 @@
 
 \begin{displaymath}
   \begin{array}{c}
+    \begin{array}{rl}
+      \dfrac{
+        \dfrac{}{
+          \raisebox{0.6ex}[2.3ex][0ex]{
+            $r \!\in\! \mathbb{B}$
+          }
+        }
+      }{
+        \{x : \text{\it Bool} \} \vdash \mathsf{var}\ x :: \mathsf{Bool} := r
+      }
+      & \dfrac{
+          \dfrac{}{
+            \raisebox{0.6ex}[2.3ex][0ex]{
+              $r \!\in\! \mathbb{B}$
+            }
+          }
+        }{
+          \{x : \text{\it Bool} \} \vdash \mathsf{var}\ x := r
+        }
+    \end{array}  \\
+    \\
+    
     \dfrac{
       n \!\in\! \mathbb{I} \quad
       \{x : \text{\it Integer} \} \cup \Gamma' \vdash \text{\it statements}
@@ -172,12 +194,14 @@
         \end{array}
       }{
         \begin{array}{r}
-          \bigl\{x : \{l_1:T_1, \cdots ,l_n:T_n\} \bigr\} \cup \bigl(
-          \bigcup_{j=1}^m \Gamma_j \bigr) \cup \Gamma'' \vdash
-          \mathsf{var}\ x :: \{l_1:T_1,\cdots ,l_n:T_n\} := v;\
-          \text{\it statements}  \\
-          \text{\it where}\ v = \{ l_1:v_1,\cdots ,l_m:v_m,\
-          l_{m+1}:v_{0_{m+1}},\cdots ,l_n:v_{0_n} \}
+          \Gamma \vdash \mathsf{var}\ x :: \{l_1:T_1,\cdots ,l_n:T_n\} :=
+          v;\ \text{\it statements}  \\
+          \text{\it , where} \begin{array}[t]{l}
+            v = \{ l_1:v_1,\cdots ,l_m:v_m,\
+            l_{m+1}:v_{0_{m+1}},\cdots ,l_n:v_{0_n} \}  \\
+            \Gamma = \bigl\{x : \{l_1:T_1, \cdots ,l_n:T_n\} \bigr\} \cup
+            \bigl(\bigcup_{j=1}^m \Gamma_j \bigr) \cup \Gamma''
+          \end{array}
         \end{array}
       }
     \end{array}

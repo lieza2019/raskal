@@ -1,4 +1,4 @@
-import Data.Charp
+import Data.Char
 
 
 data Ras_Error =
@@ -43,6 +43,7 @@ data Ras_Types =
   | Ras_Real
   | Ras_String
   | Ras_Char
+  | Ras_Record
   | Ras_Bottom_type
   | Ras_Unknown_type
   deriving (Eq, Ord, Show)
@@ -76,6 +77,8 @@ data Token_codes =
   | CROSS
   | MINUS
   | STAR | STRING
+  | LBRA
+  | RBRA
   | LPAR
   | RPAR
   | SEMICOL
@@ -110,6 +113,8 @@ lex_main lexicon (row, col) src =
     case src of
       [] -> []
       (c:cs) | c == '\n' -> lex_main lexicon (row + 1, 0) cs
+             | c == '{' -> ((row, col), LBRA):(lex_main lexicon (row, col + 1) cs)
+             | c == '}' -> ((row, col), RBRA):(lex_main lexicon (row, col + 1) cs)
              | (c == ' ' || c == '\t') -> lex_main lexicon (row, col + 1) cs
              | c == '=' -> (case cs of
                               '=':cs' -> ((row, col), EQU):(lex_main lexicon (row, col + 2) cs')
