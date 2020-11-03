@@ -255,10 +255,20 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
     _ -> (expr, Nothing)
 
 
-data Sym_attrib =
+{- data Sym_attrib =
   Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
   | Attrib_Rec {attr_decl :: [Ras_Record_field], attr_fragment :: Mediate_code_fragment_raw}
+  deriving (Eq, Ord, Show) -}
+
+data Sym_attr_type =
+  Attrib_Var Mediate_code_var
+  | Attrib_Rec [Ras_Record_field]
   deriving (Eq, Ord, Show)
+
+data Sym_attrib =
+  Sym_attrib {attr_decl :: Sym_attr_type, attr_fragment :: Mediate_code_fragment_raw}
+  deriving (Eq, Ord, Show)
+
 
 data Symtbl_node =
   Sym_entry {sym_ident :: String, sym_attrib :: Sym_attrib}
@@ -289,6 +299,20 @@ sym_search symtbl tgt_id =
                                       Nothing -> sym_search symtbl' tgt_id )
 
 
+sym_regist ovwt symtbl decl@Mediate_code_var{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
+  let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
+  in
+    case symtbl of
+      Scope_empty -> ((Scope_add (0, (Sym_add node Sym_empty)) Scope_empty), Nothing)
+      Scope_add (lv, syms) symtbl' -> (case syms of
+                                         Sym_empty -> ((Scope_add (lv, (Sym_add node Sym_empty)) symtbl'), Nothing)
+                                         Sym_add _ _ -> (case (walk_on_scope syms v_id) of
+                                                           Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
+                                                                     else ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing)
+                                                           Nothing -> ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing) )
+                                      )
+
+
 data Sym_contents =
   Sym_var Mediate_code_var
   | Sym_record (String, [Ras_Record_field])
@@ -307,30 +331,14 @@ sym_regist1 ovwt symtbl contents fragment =
                                           )
   in
   case contents of
-    Sym_var (Mediate_code_var {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
-      let attr = Attrib_Var {attr_type = v_ty, attr_init = v_ini_val, attr_fragment = fragment}
-          node = Sym_entry {sym_ident = v_id, sym_attrib = attr}
+    Sym_var decl@(Mediate_code_var {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
+      let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
       in
         reg_sym v_id node
     Sym_record (rec_ident, fields) ->
-      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Attrib_Rec {attr_decl = fields, attr_fragment = fragment}}
+      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec fields, attr_fragment = fragment}}
       in
         reg_sym rec_ident node
-
-
-sym_regist ovwt symtbl Mediate_code_var{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
-  let attr = Attrib_Var {attr_type = v_ty, attr_init = v_ini_val, attr_fragment = fragment}
-      node = Sym_entry {sym_ident = v_id, sym_attrib = attr}
-  in
-    case symtbl of
-      Scope_empty -> ((Scope_add (0, (Sym_add node Sym_empty)) Scope_empty), Nothing)
-      Scope_add (lv, syms) symtbl' -> (case syms of
-                                         Sym_empty -> ((Scope_add (lv, (Sym_add node Sym_empty)) symtbl'), Nothing)
-                                         Sym_add _ _ -> (case (walk_on_scope syms v_id) of
-                                                           Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
-                                                                     else ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing)
-                                                           Nothing -> ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing) )
-                                      )
 
 
 enter_scope symtbl =
