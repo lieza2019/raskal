@@ -36,6 +36,11 @@ data Ras_Const =
   | Ras_Const_not_defined
   deriving (Eq, Ord, Show)
 
+
+data Ras_Record_field =
+  Ras_Record_field {memb_ident :: String, memb_type :: Ras_Types, memb_const :: Ras_Const}
+  deriving (Eq, Ord, Show)
+
 data Ras_Types =
   Ras_Top_type
   | Ras_Boolean
@@ -43,7 +48,7 @@ data Ras_Types =
   | Ras_Real
   | Ras_String
   | Ras_Char
-  | Ras_Record
+  | Ras_Record [Ras_Record_field]
   | Ras_Bottom_type
   | Ras_Unknown_type
   deriving (Eq, Ord, Show)
@@ -252,6 +257,7 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
 
 data Sym_attrib =
   Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
+  | Attrib_Rec ([Ras_Record_field], Mediate_code_fragment_raw)
   deriving (Eq, Ord, Show)
 
 data Symtbl_node =
@@ -281,6 +287,35 @@ sym_search symtbl tgt_id =
     Scope_add (_, syms) symtbl' -> (case (walk_on_scope syms tgt_id) of
                                       Just e -> Just (sym_attrib e)
                                       Nothing -> sym_search symtbl' tgt_id )
+
+
+data Sym_contents =
+  Sym_var Mediate_code_var
+  | Sym_record (String, [Ras_Record_field])
+    deriving (Eq, Ord, Show)
+
+sym_regist1 ovwt symtbl contents fragment =
+  let reg_sym ident sym =
+        case symtbl of
+          Scope_empty -> ((Scope_add (0, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
+          Scope_add (lv, syms) symtbl' -> (case syms of
+                                             Sym_empty -> ((Scope_add (lv, (Sym_add sym Sym_empty)) symtbl'), Nothing)
+                                             Sym_add _ _ -> (case (walk_on_scope syms ident) of
+                                                               Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
+                                                                         else ((Scope_add (lv, (Sym_add sym syms)) symtbl'), Nothing)
+                                                               Nothing -> ((Scope_add (lv, (Sym_add sym syms)) symtbl'), Nothing) )
+                                          )
+  in
+  case contents of
+    Sym_var (Mediate_code_var {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
+      let attr = Attrib_Var {attr_type = v_ty, attr_init = v_ini_val, attr_fragment = fragment}
+          node = Sym_entry {sym_ident = v_id, sym_attrib = attr}
+      in
+        reg_sym v_id node
+    Sym_record (rec_ident, fields) ->
+      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Attrib_Rec (fields, fragment)}
+      in
+        reg_sym rec_ident node
 
 
 sym_regist ovwt symtbl Mediate_code_var{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
