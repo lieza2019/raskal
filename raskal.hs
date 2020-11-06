@@ -287,7 +287,7 @@ data Symtbl_anon_ident =
 
 data Symtbl =
   Scope_empty
-  | Scope_add (Int, Symtbl_cluster) Symtbl
+  | Scope_add (Int, Symtbl_anon_ident, Symtbl_cluster) Symtbl
   deriving (Eq, Ord, Show)
 
 
@@ -308,14 +308,17 @@ sym_search symtbl tgt_id =
 sym_regist ovwt symtbl entity fragment =
   let reg_sym ident sym =
         case symtbl of
-          Scope_empty -> ((Scope_add (0, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
-          Scope_add (lv, syms) symtbl' -> (case syms of
-                                             Sym_empty -> ((Scope_add (lv, (Sym_add sym Sym_empty)) symtbl'), Nothing)
-                                             Sym_add _ _ -> (case (walk_on_scope syms ident) of
-                                                               Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
-                                                                         else ((Scope_add (lv, (Sym_add sym syms)) symtbl'), Nothing)
-                                                               Nothing -> ((Scope_add (lv, (Sym_add sym syms)) symtbl'), Nothing) )
-                                          )
+          Scope_empty ->
+            ((Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
+          Scope_add (lv, anon_ident_crnt, syms) symtbl' ->
+            (case syms of
+               Sym_empty -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym Sym_empty)) symtbl'), Nothing)
+               Sym_add _ _ -> (case (walk_on_scope syms ident) of
+                                 Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
+                                           else ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
+                                 Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
+                              )
+            )
   in
   case entity of
     Sym_var decl@(Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
@@ -349,8 +352,28 @@ sym_regist ovwt symtbl decl@Mediate_var_attr{var_ident = v_id, var_type = v_ty, 
 
 enter_scope symtbl =
   case symtbl of
-    Scope_empty -> Scope_add (0, Sym_empty) Scope_empty
-    Scope_add (lv, _) _ -> Scope_add (lv + 1, Sym_empty) symtbl
+    Scope_empty -> Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, Sym_empty) Scope_empty
+    Scope_add (lv, sym_anon_ident, _) _ -> Scope_add (lv + 1, sym_anon_ident, Sym_empty) symtbl
+
+
+sym_anonid_var symtbl =
+  let symtbl' = (case symtbl of
+                   Scope_empty -> enter_scope symtbl
+                   Scope_add _ _ -> symtbl )
+  in
+    case symtbl' of
+      Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_var = crnt_top}), syms) symtbl'' ->
+        (crnt_top, Scope_add (lv, anon_crnt {sym_anon_var = crnt_top + 1}, syms) symtbl'')
+
+
+sym_anonid_record symtbl =
+  let symtbl' = (case symtbl of
+                   Scope_empty -> enter_scope symtbl
+                   Scope_add _ _ -> symtbl )
+  in
+    case symtbl' of
+      Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_record = crnt_top}), syms) symtbl'' ->
+        (crnt_top, Scope_add (lv, anon_crnt {sym_anon_record = crnt_top + 1}, syms) symtbl'')
 
 
 leave_scope symtbl =
