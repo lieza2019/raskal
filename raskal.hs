@@ -300,9 +300,9 @@ walk_on_scope sym_cluster tgt_id =
 sym_search symtbl tgt_id =
   case symtbl of
     Scope_empty -> Nothing
-    Scope_add (_, syms) symtbl' -> (case (walk_on_scope syms tgt_id) of
-                                      Just e -> Just (sym_attrib e)
-                                      Nothing -> sym_search symtbl' tgt_id )
+    Scope_add (_, _, syms) symtbl' -> (case (walk_on_scope syms tgt_id) of
+                                         Just e -> Just (sym_attrib e)
+                                         Nothing -> sym_search symtbl' tgt_id )
 
 
 sym_regist ovwt symtbl entity fragment =
