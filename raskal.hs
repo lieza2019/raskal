@@ -48,7 +48,7 @@ data Ras_Types =
   | Ras_Real
   | Ras_String
   | Ras_Char
-  | Ras_Record [Ras_Record_field]
+  | Ras_Record (String, [Ras_Record_field])
   | Ras_Deftype
   | Ras_Bottom_type
   | Ras_Unknown_type
@@ -435,7 +435,7 @@ par_record symtbl (row, col) tokens =
                 ((row, col), RECORD):ts -> (case (par_record symtbl (row, col) tokens) of
                                               (r_ident, symtbl', ts', Nothing) ->
                                                 (case (sym_lookup_rec symtbl' r_ident) of
-                                                   Just (sig, attr) -> (Ras_Record sig, symtbl', ts', Nothing)
+                                                   Just (sig, attr) -> (Ras_Record (r_ident, sig), symtbl', ts', Nothing)
                                                    Nothing -> (Ras_Unknown_type, symtbl', ts', Just [(Par_error ((row, col), Compiler_internal_error))]) )
                                               (_, symtbl', ts', err) -> (Ras_Illformed_type, symtbl', ts', err)
                                            )
@@ -571,7 +571,19 @@ par_var acc symtbl (row, col) tokens =
                                                                                 (_, REAL) -> init_and_tychk (reveal Ras_Real vars) us
                                                                                 (_, STRING) -> init_and_tychk (reveal Ras_String vars) us
                                                                                 (_, CHAR) -> init_and_tychk (reveal Ras_Char vars) us
-                                                                                ((r'', c''), _) -> (acc, symtbl, us, Just [(Par_error ((r'', c''), Illformed_Declarement))])
+                                                                                ((row'', col''), RECORD) ->
+                                                                                  (case (par_record symtbl (row'', col'') us) of
+                                                                                     (r_ident, symtbl', us', err) ->
+                                                                                       (case err of
+                                                                                          Nothing ->
+                                                                                            (case (sym_lookup_rec symtbl' r_ident) of
+                                                                                               Just (r_fields, _) -> let r_type = Ras_Record (r_ident, r_fields)
+                                                                                                                     in
+                                                                                                                       init_and_tychk (reveal r_type vars) us'
+                                                                                               Nothing -> (vars, symtbl', us', Just [(Par_error ((row', col'), Compiler_internal_error))]) )
+                                                                                          _ -> (vars, symtbl', us', err) )
+                                                                                  )
+                                                                                ((row'', col''), _) -> (acc, symtbl, us, Just [(Par_error ((row'', col''), Illformed_Declarement))])
                                                                              )
                                                                    _ -> (vars, symtbl, [], Just [(Par_error ((row', col'), Illformed_Declarement))])
                                                                 )
