@@ -432,7 +432,7 @@ par_record symtbl (row, col) tokens =
                 (_, REAL):ts -> (Ras_Real, symtbl, ts, Nothing)
                 (_, STRING):ts -> (Ras_String, symtbl, ts, Nothing)
                 (_, CHAR):ts -> (Ras_Char, symtbl, ts, Nothing)
-                ((row, col), RECORD):ts -> (case (par_record symtbl (row, col) tokens) of
+                ((row, col), RECORD):ts -> (case (par_record symtbl (row, col) ts) of
                                               (r_ident, symtbl', ts', Nothing) ->
                                                 (case (sym_lookup_rec symtbl' r_ident) of
                                                    Just (sig, attr) -> (Ras_Record (r_ident, sig), symtbl', ts', Nothing)
