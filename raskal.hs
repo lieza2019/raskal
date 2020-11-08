@@ -259,7 +259,7 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
 
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
-  | Attrib_Rec [Ras_Record_field]
+  | Attrib_Rec (String, [Ras_Record_field])
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
@@ -321,7 +321,7 @@ sym_lookup_rec symtbl ident =
     case trying of
       Nothing -> Nothing
       Just (attr@(Sym_attrib {attr_decl = decl_type}), remainders) -> (case decl_type of
-                                                                         Attrib_Rec sig -> Just (sig, attr)
+                                                                         Attrib_Rec (_, sig) -> Just (sig, attr)
                                                                          _ -> sym_lookup_rec remainders ident )
 
 
@@ -363,7 +363,7 @@ sym_regist ovwt symtbl entity fragment =
       in
         reg_sym v_id node
     Sym_record (rec_ident, fields) ->
-      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec fields, attr_fragment = fragment}}
+      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec (rec_ident, fields), attr_fragment = fragment}}
       in
         reg_sym rec_ident node
 
@@ -483,15 +483,6 @@ par_record symtbl (row, col) tokens =
 
 
 par_var acc symtbl (row, col) tokens =
-  {-
-  let init_and_tychk vars tokens =
-        case tokens of
-          DEF:ts -> (case ts of
-                       (CHR_CONST c):ts' -> ((map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var(v{var_const = Char_const c})) vars), ts', Nothing)
-                       (STR_CONST c):ts' -> ((map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var(v{var_const = String_const c})) vars), ts', Nothing)
-                       (NUM_CONST c):ts' -> ((map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var(v{var_const = Numeric_const c})) vars), ts', Nothing)
-                       _ -> (vars, ts, Just Illformed_Declarement) )
-          _ -> (vars, tokens, Nothing) -}
   let init_and_tychk vars tokens =
         let folding val =
               case val of
