@@ -291,12 +291,6 @@ data Symtbl =
   deriving (Eq, Ord, Show)
 
 
-walk_on_scope sym_cluster tgt_id =
-  case sym_cluster of
-    Sym_empty -> Nothing
-    Sym_add e sym_cluster' -> if ((sym_ident e) == tgt_id) then Just e
-                              else walk_on_scope sym_cluster' tgt_id
-
 sym_search symtbl tgt_id =
   case symtbl of
     Scope_empty -> Nothing
@@ -304,6 +298,24 @@ sym_search symtbl tgt_id =
                                          Just e -> Just (sym_attrib e)
                                          Nothing -> sym_search symtbl' tgt_id )
 
+
+walk_on_scope sym_cluster (kind, tgt_id) =
+  let cmp_kind (Sym_entry {sym_attrib = attr}) =
+        let sym_kind = case attr of
+                         Sym_attrib {attr_decl = attr_type} -> attr_type
+        in
+          case kind of
+            Sym_var _ -> (case sym_kind of
+                            Attrib_Var _ -> True
+                            _ -> False )
+            Sym_record _ -> (case sym_kind of
+                               Attrib_Rec _ -> True
+                               _ -> False )
+  in
+    case sym_cluster of
+      Sym_empty -> Nothing
+      Sym_add sym sym_cluster' -> if ((cmp_kind sym) && ((sym_ident sym) == tgt_id)) then Just sym
+                                  else walk_on_scope sym_cluster' (kind, tgt_id)
 
 sym_regist ovwt symtbl entity fragment =
   let reg_sym ident sym =
@@ -313,7 +325,7 @@ sym_regist ovwt symtbl entity fragment =
           Scope_add (lv, anon_ident_crnt, syms) symtbl' ->
             (case syms of
                Sym_empty -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym Sym_empty)) symtbl'), Nothing)
-               Sym_add _ _ -> (case (walk_on_scope syms ident) of
+               Sym_add _ _ -> (case (walk_on_scope syms (entity, ident)) of
                                  Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
                                            else ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
                                  Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
