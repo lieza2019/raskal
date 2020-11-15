@@ -16,27 +16,6 @@ data Ras_compiling_err =
   deriving (Eq, Ord, Show)
 
 
-data Char_const =
-  Ras_Char_const Char
-  deriving (Eq, Ord, Show)
-
-data String_const =
-  Ras_String_const String
-  deriving (Eq, Ord, Show)
-
-data Numeric_const =
-  Ras_Integer_const Int
-  | Ras_Real_const (Int, Int)
-  deriving (Eq, Ord, Show)
-
-data Ras_Const =
-  Char_const Char_const
-  | String_const String_const
-  | Numeric_const Numeric_const
-  | Ras_Const_not_defined
-  deriving (Eq, Ord, Show)
-
-
 data Ras_Record_field =
   Ras_Record_field {memb_ident :: String, memb_type :: Ras_Types, memb_const :: Ras_Const}
   deriving (Eq, Ord, Show)
@@ -53,6 +32,32 @@ data Ras_Types =
   | Ras_Bottom_type
   | Ras_Unknown_type
   | Ras_Illformed_type
+  deriving (Eq, Ord, Show)
+
+
+data Char_const =
+  Ras_Char_const Char
+  deriving (Eq, Ord, Show)
+
+data String_const =
+  Ras_String_const String
+  deriving (Eq, Ord, Show)
+
+data Numeric_const =
+  Ras_Integer_const Int
+  | Ras_Real_const (Int, Int)
+  deriving (Eq, Ord, Show)
+
+data Record_const =
+  Ras_Record_const Ras_Types
+  deriving (Eq, Ord, Show)
+
+data Ras_Const =
+  Char_const Char_const
+  | String_const String_const
+  | Numeric_const Numeric_const
+  | Record_const Record_const
+  | Ras_Const_not_defined
   deriving (Eq, Ord, Show)
 
 
@@ -200,6 +205,7 @@ data Mediate_code_mnemonic =
 
 data Mediate_var_attr =
   Mediate_var_attr {var_ident :: String, var_type :: Ras_Types, var_const :: Ras_Const}
+  | Mediate_rec_attr (String, [Mediate_code_fragment_raw])
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
@@ -234,7 +240,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
     _ -> Ras_Unknown_type
 
 
-tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by type inference. -}
+typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, by type inference. -}
   case expr of
     {- If e1 : T1, e2 : T2, and T2 <: T1, then (e1:T1 := e2:T2) : T1. -}
     Mediate_code_raw_Bin {mnemonic = m}
@@ -247,7 +253,7 @@ tychk (row, col) expr = {- Updating types of each sub-expr. in given expr, by ty
                                                         in
                                                           if (ty_l == Ras_Bottom_type) then
                                                             let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
-                                                            in  
+                                                            in
                                                               (expr{operand_0 = lvalue'}, Nothing)
                                                           else
                                                             if (is_subtype ty_r ty_l) then (expr, Nothing)
@@ -482,6 +488,88 @@ par_record symtbl (row, col) tokens =
         _ -> (r_ident, symtbl', tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
 
 
+tychk_on_init vars tokens =
+  let load val =
+        case val of
+          Mediate_code_raw_Var v ->
+            let lvalue = Mediate_code_raw_Var v
+                rvalue = Mediate_code_raw_Literal (var_const v)
+            in
+              Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+          _ -> val
+  in
+    let extract exprs =
+          let strip es =
+                case es of
+                  [] -> []
+                  (e, err):es' -> e:(strip es)
+          in
+            case exprs of
+              [] -> ([], Nothing)
+              (expr, err):es -> ((strip exprs), err)
+    in
+      case tokens of
+        ((row, col), (CHR_CONST c)):ts ->
+          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Char_const c}))) vars), ts)
+        ((row, col), (STR_CONST s)):ts ->
+          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = String_const s}))) vars), ts)
+        ((row, col), (NUM_CONST n)):ts ->
+          (extract (map (typecheck (row, col) . load  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const n}))) vars), ts)
+        _ -> (((map load vars), Nothing), tokens)
+
+
+par_record_const acc symtbl (r_ident, fields) tokens@((tk@((row, col), _)):ts) =
+  case fields of
+    [] -> (case ts of
+             (_, RBRA):ts' -> (acc, symtbl, ts', Nothing)
+             ((row, col), _):ts' -> (acc, symtbl, ts, Just [Par_error ((row, col), Illformed_Declarement)])
+             _ -> (acc, symtbl, [], Just [Par_error ((row, col), Illformed_Declarement)])
+          )
+    f:fs ->
+      (case (memb_type f) of
+         Ras_Record (r_nested_ident, r_nested_fields) ->
+           (case ts of
+              ((row', col'), LBRA):ts' ->
+                (case (par_record_const [] symtbl (r_nested_ident, r_nested_fields) ts) of
+                   (acc_nested, symtbl', tokens', err) -> let acc' = acc ++ [Mediate_code_raw_Var (Mediate_rec_attr (r_nested_ident, acc_nested))]
+                                                          in
+                                                            case err of
+                                                              Nothing -> tailing fs (acc', symtbl', tokens', err)
+                                                              Just _ -> (acc', symtbl', tokens', err)
+                )
+              ((row', col'), _):ts' -> (acc, symtbl, ts, Just [Par_error ((row', col'), Illformed_Declarement)])
+              _ -> (acc, symtbl, [], Just [Par_error ((row, col), Illformed_Declarement)])
+           )
+         _ -> let v_memb = Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
+                                                                   var_const = Ras_Const_not_defined})
+              in
+                case (tychk_on_init [v_memb] ts) of
+                  (((Mediate_code_raw_Bin {operand_0 = v_memb'}):es, err), tokens') -> let acc' = acc ++ [v_memb']
+                                                                                       in
+                                                                                         tailing fs (acc', symtbl, tokens', err)
+                  ((_, err), tokens') -> ((acc ++ [v_memb]), symtbl, tokens', err)
+      )
+      
+      where tailing fields' (acc', symtbl', tokens', err) =
+              case err of
+                Nothing -> (case fields' of
+                              [] -> (case tokens' of
+                                       (_, SEMICOL):(_, RBRA):ts' -> (acc', symtbl', ts', Nothing)
+                                       (_, RBRA):ts' -> (acc', symtbl', ts', Nothing)
+                                       ((row', col'), _):ts' -> (acc', symtbl', tokens', Just [Par_error ((row', col'), Illformed_Declarement)])
+                                       _ -> (acc', symtbl', [], Just [Par_error ((row, col), Illformed_Declarement)])
+                                    )
+                              _ -> (case tokens' of
+                                      (_, SEMICOL):(_, RBRA):ts' -> (acc', symtbl', ts', Nothing)
+                                      (_, RBRA):ts' -> (acc', symtbl', ts', Nothing)
+                                      (_, SEMICOL):ts' -> par_record_const acc' symtbl' (r_ident, fields') tokens'
+                                      ((row', col'), _):ts' -> (acc', symtbl', tokens', Just [Par_error ((row', col'), Illformed_Declarement)])
+                                      _ -> (acc', symtbl', [], Just [Par_error ((row, col), Illformed_Declarement)])
+                                   )
+                           )
+                Just _ -> (acc', symtbl', tokens', err)
+
+
 par_var acc symtbl (row, col) tokens =
   let init_and_tychk vars tokens =
         let folding val =
@@ -508,7 +596,7 @@ par_var acc symtbl (row, col) tokens =
             case tokens of
               ((row, col), DEF):ts -> (case ts of
                                          ((row', col'), (CHR_CONST c)):ts' ->
-                                           let rs = map (tychk (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Char_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Char_const c}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -518,7 +606,7 @@ par_var acc symtbl (row, col) tokens =
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (STR_CONST c)):ts' ->
-                                           let rs = map (tychk (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = String_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = String_const c}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -528,7 +616,7 @@ par_var acc symtbl (row, col) tokens =
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (NUM_CONST c)):ts' ->
-                                           let rs = map (tychk (row', col') . folding  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const c}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -612,7 +700,7 @@ par_asgn symtbl ((row, col), ident) tokens =
                   (expr_r, symtbl', ts', r) -> let fr_asgn' = fr_asgn{operand_1 = expr_r}
                                                in
                                                  if (r == Nothing) then
-                                                   (case (tychk (row, col) fr_asgn') of
+                                                   (case (typecheck (row, col) fr_asgn') of
                                                       (fr_asgn', Nothing) -> (case (update symtbl fr_asgn') of
                                                                                 (fr_asgn', symtbl', r) -> ([fr_asgn'], symtbl', ts', r) )
                                                       (fr_asgn', r) -> ([fr_asgn'], symtbl', ts', r)
