@@ -1,3 +1,7 @@
+-- :set -XRecordWildCards
+{-# LANGUAGE RecordWildCards #-}
+
+import Control.Exception
 import Data.Char
 
 
@@ -203,11 +207,18 @@ data Mediate_code_mnemonic =
   Mn_asgn
   deriving (Eq, Ord, Show)
 
-data Mediate_var_attr =
+{- data Mediate_var_attr =
   Mediate_var_attr {var_ident :: String, var_type :: Ras_Types, var_const :: Ras_Const}
   | Mediate_rec_attr {var_ident :: String, var_type :: Ras_Types, var_fields :: [Mediate_code_fragment_raw]}
 --  | Mediate_def_attr {var_ident :: String, var_type :: Ras_Types, var_body :: Mediate_code_fragment_raw}
   | Mediate_def_attr {var_ident :: String, var_type :: Ras_Types}
+  deriving (Eq, Ord, Show) -}
+
+data Mediate_var_attr =
+  Mediate_var_attr {var_ident :: String, var_type :: Ras_Types, var_attr :: Mediate_var_attr}
+  | Var_attr_const Ras_Const
+  | Var_attr_fields [Mediate_code_fragment_raw]
+  | Var_attr_typedef Mediate_code_fragment_raw
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
@@ -268,6 +279,7 @@ typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, b
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
   | Attrib_Rec (String, [Ras_Record_field])
+  | Attrib_Typedef Ras_Types
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
@@ -333,6 +345,16 @@ sym_lookup_rec symtbl ident =
                                                                          _ -> sym_lookup_rec remainders ident )
 
 
+sym_lookup_type symtbl ident =
+  let trying = sym_search symtbl ident
+  in
+    case trying of
+      Nothing -> Nothing
+      Just (attr@(Sym_attrib {attr_decl = decl_type}), remainders) -> (case decl_type of
+                                                                         Attrib_Typedef ty -> Just (ty, attr)
+                                                                         _ -> sym_lookup_type remainders ident )
+
+
 walk_on_scope sym_cluster (kind, tgt_id) =
   let cmp_kind (Sym_entry {sym_attrib = attr}) =
         let attr_type = attr_decl attr
@@ -366,7 +388,7 @@ sym_regist ovwt symtbl entity fragment =
             )
   in
   case entity of
-    Sym_var decl@(Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_const = v_ini_val}) ->
+    Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
       let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
       in
         reg_sym v_id node
@@ -490,14 +512,17 @@ par_record symtbl (row, col) tokens =
         _ -> (r_ident, symtbl', tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
 
 
-tychk_on_init vars tokens =
+tychk_and_init vars tokens =
   let load val =
         case val of
-          Mediate_code_raw_Var v ->
-            let lvalue = Mediate_code_raw_Var v
-                rvalue = Mediate_code_raw_Literal (var_const v)
-            in
-              Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+          Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
+            (case v_attr of
+                Var_attr_const c -> let lvalue = val
+                                        rvalue = Mediate_code_raw_Literal c
+                                    in
+                                      Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+                _ -> assert False val
+            )
           _ -> val
   in
     let extract exprs =
@@ -512,11 +537,11 @@ tychk_on_init vars tokens =
     in
       case tokens of
         ((row, col), (CHR_CONST c)):ts ->
-          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Char_const c}))) vars), ts)
+          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Char_const c)}))) vars), ts)
         ((row, col), (STR_CONST s)):ts ->
-          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = String_const s}))) vars), ts)
+          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (String_const s)}))) vars), ts)
         ((row, col), (NUM_CONST n)):ts ->
-          (extract (map (typecheck (row, col) . load  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const n}))) vars), ts)
+          (extract (map (typecheck (row, col) . load  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Numeric_const n)}))) vars), ts)
         _ -> (((map load vars), Nothing), tokens)
 
 
@@ -533,9 +558,9 @@ par_record_const acc symtbl (r_ident, fields) tokens@((tk@((row, col), _)):ts) =
            (case ts of
               ((row', col'), LBRA):ts' ->
                 (case (par_record_const [] symtbl (r_nested_ident, r_nested_fields) ts) of
-                   (acc_nested, symtbl', tokens', err) -> let acc' = acc ++ [Mediate_code_raw_Var (Mediate_rec_attr {var_ident = (memb_ident f)
-                                                                                                                    ,var_type = (memb_type f)
-                                                                                                                    ,var_fields = acc_nested})]
+                   (acc_nested, symtbl', tokens', err) -> let acc' = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f),
+                                                                                                                     var_type = (memb_type f),
+                                                                                                                     var_attr = (Var_attr_fields acc_nested)})]
                                                           in
                                                             case err of
                                                               Nothing -> tailing fs (acc', symtbl', tokens', err)
@@ -544,10 +569,11 @@ par_record_const acc symtbl (r_ident, fields) tokens@((tk@((row, col), _)):ts) =
               ((row', col'), _):ts' -> (acc, symtbl, ts, Just [Par_error ((row', col'), Illformed_Declarement)])
               _ -> (acc, symtbl, [], Just [Par_error ((row, col), Illformed_Declarement)])
            )
+         {- Ras_Typedef ty_ident -> -}
          _ -> let v_memb = Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
-                                                                   var_const = Ras_Const_not_defined})
+                                                                   var_attr = (Var_attr_const Ras_Const_not_defined)})a
               in
-                case (tychk_on_init [v_memb] ts) of
+                case (tychk_and_init [v_memb] ts) of
                   (((Mediate_code_raw_Bin {operand_0 = v_memb'}):es, err), tokens') -> let acc' = acc ++ [v_memb']
                                                                                        in
                                                                                          tailing fs (acc', symtbl, tokens', err)
@@ -560,10 +586,17 @@ par_record_const acc symtbl (r_ident, fields) tokens@((tk@((row, col), _)):ts) =
                       [] -> []
                       f:fs -> (case (memb_type f) of
                                  Ras_Record (r_ident, r_fields) ->
-                                   Mediate_code_raw_Var (Mediate_rec_attr {var_ident = (memb_ident f), var_type = (memb_type f), var_fields = (padding r_fields)})
+                                   Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
+                                                                           var_attr = Var_attr_fields (padding r_fields)})
                                  Ras_Typedef ty_ident ->
-                                   Mediate_code_raw_Var (Mediate_def_attr {var_ident = (memb_ident f), var_type = (memb_type f)})
-                                 _ -> Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f), var_const = Ras_Const_not_defined})
+                                   let (ty_def, _) = sym_lookup_type symtbl' ty_ident
+                                   in
+                                     {- Here!: [ty_def] isn't fields list, but LIST of Ras_Types. -}
+                                     case (padding [ty_def]) of
+                                       p:ps -> assert (ps == []) (Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
+                                                                                                          var_attr = Var_attr_typedef p}) )
+                                 _ -> Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
+                                                                              var_attr = Var_attr_const Ras_Const_not_defined})
                               ) : (padding fs)
               in
                 case err of
@@ -699,7 +732,7 @@ par_var acc symtbl (row, col) tokens =
                                  )
                        -- _ -> (vars, symtbl, [], Nothing)
                        _ -> init_and_tychk Ras_Bottom_type vars []
-              )
+              ):
 
 
 par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
