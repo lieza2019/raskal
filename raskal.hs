@@ -512,37 +512,59 @@ par_record symtbl (row, col) tokens =
         _ -> (r_ident, symtbl', tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
 
 
-tychk_and_init vars tokens =
-  let load val =
-        case val of
-          Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
-            (case v_attr of
-                Var_attr_const c -> let lvalue = val
-                                        rvalue = Mediate_code_raw_Literal c
-                                    in
-                                      Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
-                _ -> assert False val
-            )
-          _ -> val
-  in
-    let extract exprs =
-          let strip es =
-                case es of
-                  [] -> []
-                  (e, err):es' -> e:(strip es)
-          in
-            case exprs of
-              [] -> ([], Nothing)
-              (expr, err):es -> ((strip exprs), err)
-    in
-      case tokens of
-        ((row, col), (CHR_CONST c)):ts ->
-          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Char_const c)}))) vars), ts)
-        ((row, col), (STR_CONST s)):ts ->
-          (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (String_const s)}))) vars), ts)
-        ((row, col), (NUM_CONST n)):ts ->
-          (extract (map (typecheck (row, col) . load  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Numeric_const n)}))) vars), ts)
-        _ -> (((map load vars), Nothing), tokens)
+def_and_reg_var symtbl [] = (symtbl, [])
+def_and_reg_var symtbl ((Mediate_code_raw_Bin {operand_0 = lvalue}):es) = case lvalue of
+                                                                            Mediate_code_raw_Var var ->
+                                                                              let (symtbl', r) = sym_regist False symtbl (Sym_var var) lvalue
+                                                                              in
+                                                                                case r of
+                                                                                  Nothing -> (case (def_and_reg_var symtbl' es) of
+                                                                                                (symtbl', es') -> (symtbl', lvalue:es') )
+                                                                                  Just err -> def_and_reg_var symtbl es
+                                                                            _ -> def_and_reg_var symtbl es
+
+par_init_on_decl =
+  let tychk_and_init vars tokens =
+        let def_and_reg_vars symtbl vars =
+              case vars of
+                [] -> (symtbl, [])
+                (v@(Mediate_code_raw_Var var)):vs -> let (symtbl', r) = sym_regist False symtbl (Sym_var var) v
+                                                     in
+                                                       case r of
+                                                         Nothing -> (case (def_and_reg_vars symtbl' vs) of
+                                                                       (symtbl', vs') -> (symtbl', v:vs') )
+                                                         Just err -> def_and_reg_vars symtbl' vs
+            
+            load val =
+              case val of
+                Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
+                  (case v_attr of
+                     Var_attr_const c -> let lvalue = val
+                                             rvalue = Mediate_code_raw_Literal c
+                                         in
+                                           Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+                     _ -> assert False val
+                  )
+                _ -> val
+            
+            extract exprs =
+              let strip es =
+                    case es of
+                      [] -> []
+                      (e, err):es' -> e:(strip es)
+              in
+                case exprs of
+                  [] -> ([], Nothing)
+                  (expr, err):es -> ((strip exprs), err)
+        in
+          case tokens of
+            ((row, col), (CHR_CONST c)):ts ->
+              (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Char_const c)}))) vars), ts)
+            ((row, col), (STR_CONST s)):ts ->
+              (extract (map (typecheck (row, col) . load . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (String_const s)}))) vars), ts)
+            ((row, col), (NUM_CONST n)):ts ->
+              (extract (map (typecheck (row, col) . load  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Numeric_const n)}))) vars), ts)
+            _ -> (((map load vars), Nothing), tokens)
 
 
 par_record_const acc symtbl (r_ident, fields) tokens@((tk@((row, col), _)):ts) =
