@@ -565,7 +565,8 @@ par_init_on_decl symtbl vars (((row0, col0), tk0):tokens) =
                                          (symtbl', vars', errs') -> (symtbl', v:vars', errs') )
                            Just sym_err -> let errs' = add_error errs (Par_error ((var_coord var), sym_err))
                                            in
-                                             def_and_reg_vars symtbl' (vs, errs')
+                                             case (def_and_reg_vars symtbl' (vs, errs')) of
+                                               (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
              in
                let init c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const c}))
                in
