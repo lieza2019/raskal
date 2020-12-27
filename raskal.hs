@@ -230,7 +230,7 @@ data Mediate_code_mnemonic =
 data Mediate_var_attr =
   Mediate_var_attr {var_coord :: (Int, Int), var_ident :: String, var_type :: Ras_Types, var_attr :: Mediate_var_attr}
   | Var_attr_const Ras_Const
-  | Var_attr_fields [Mediate_ecode_fragment_raw]
+  | Var_attr_fields [Mediate_code_fragment_raw]
   | Var_attr_typedef Mediate_code_fragment_raw
   deriving (Eq, Ord, Show)
 
@@ -466,72 +466,86 @@ leave_scope symtbl =
     Scope_add sco symtbl' -> symtbl'
 
 
-par_record symtbl (row, col) tokens =
-  let decl_fields acc symtbl (row, col) tokens =
-        let decl_type symtbl tokens =
+par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
+  let decl_fields acc symtbl tokens0@(((row0, col0), _):tokens) =
+        let decl_type symtbl tokens0@(((row0, col0), _):tokens) =
               case tokens of
-                (_, BOOLEAN):ts -> (Ras_Boolean, symtbl, ts, Nothing)
-                (_, INTEGER):ts -> (Ras_Integer, symtbl, ts, Nothing)
-                (_, REAL):ts -> (Ras_Real, symtbl, ts, Nothing)
-                (_, STRING):ts -> (Ras_String, symtbl, ts, Nothing)
-                (_, CHAR):ts -> (Ras_Char, symtbl, ts, Nothing)
-                ((row, col), RECORD):ts -> (case (par_record symtbl (row, col) ts) of
-                                              (r_ident, symtbl', ts', Nothing) ->
-                                                (case (sym_lookup_rec symtbl' r_ident) of
-                                                   Just (sig, attr) -> (Ras_Record (r_ident, sig), symtbl', ts', Nothing)
-                                                   Nothing -> (Ras_Unknown_type, symtbl', ts', Just [(Par_error ((row, col), Compiler_internal_error))]) )
-                                              (_, symtbl', ts', err) -> (Ras_Illformed_type, symtbl', ts', err)
-                                           )
+                (_, BOOLEAN):ts -> (Ras_Boolean, symtbl, tokens, Nothing)
+                (_, INTEGER):ts -> (Ras_Integer, symtbl, tokens, Nothing)
+                (_, REAL):ts -> (Ras_Real, symtbl, tokens, Nothing)
+                (_, STRING):ts -> (Ras_String, symtbl, tokens, Nothing)
+                (_, CHAR):ts -> (Ras_Char, symtbl, tokens, Nothing)
+                ((row, col), RECORD):ts ->
+                  (case (par_record symtbl tokens) of
+                      (r_ident, symtbl', tokens', Nothing) -> (case (sym_lookup_rec symtbl' r_ident) of
+                                                                 Just (sig, _) -> (Ras_Record (r_ident, sig), symtbl', tokens', Nothing)
+                                                                 Nothing -> (Ras_Unknown_type, symtbl', tokens', Just [(Par_error ((row, col), Compiler_internal_error))]) )
+                      (_, symtbl', tokens', err) -> (Ras_Illformed_type, symtbl', tokens', err)
+                  )
                 {-((row, col), IDENT t_ident):ts -> (case (sym_lookup_type symtbl t_ident) of
                                                      Just (sig, attr) -> (Ras_DefType sig, symtbl, ts, Nothing)
                                                      Nothing -> (Ras_Unknown_type, symtbl, ts, Just [(Par_error ((row, col), Illformed_Declarement))]) ) -}
-                ((row, col), _):ts -> (Ras_Illformed_type, symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
+                ((row, col), _):ts -> (Ras_Illformed_type, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
+                _ ->(Ras_Illformed_type, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
         in
           case tokens of
             ((row, col), IDENT f_ident):ts ->
               let field = Ras_Record_field {memb_ident = f_ident, memb_type = Ras_Unknown_type}
               in
                 (case ts of
-                   ((row', col'), COLON):ts' -> (case (decl_type symtbl ts') of
-                                                   (f_type, symtbl', ts', err) ->
+                   ((row', col'), COLON):ts' -> (case (decl_type symtbl ts) of
+                                                   (f_type, symtbl', tokens', err) ->
                                                      let acc' = acc ++ [field{memb_type = f_type}]
                                                      in
                                                        case err of
-                                                         Nothing -> (case ts' of
-                                                                       ((row'', col''), SEMICOL):ts'' -> decl_fields acc' symtbl' (row'', col'') ts''
-                                                                       _ -> (acc', symtbl', ts', Nothing) )
-                                                         _ -> (acc', symtbl', ts', err)
+                                                         Nothing -> (case tokens' of
+                                                                       ((row0', col0'), _):((row'', col''), SEMICOL):ts'' -> decl_fields acc' symtbl' (((row'', col''), SEMICOL):ts'')
+                                                                       ((row0', col0'), _):((row'', col''), _):ts'' -> (acc', symtbl', tokens', Nothing)
+                                                                       ((row0', col0'), _):ts'' -> (acc', symtbl', tokens', Nothing)
+                                                                       _ -> assert False (acc', symtbl', tokens', Nothing) )
+                                                         _ -> (acc', symtbl', tokens', err)
                                                 )
-                   ((row', col'), _):ts' -> ((acc ++ [field]), symtbl, ts, Just [(Par_error ((row', col'), Illformed_Declarement))])
-                   _ -> ((acc ++ [field]), symtbl, [], Just [(Par_error ((row, col), Illformed_Declarement))])
+                   ((row', col'), _):ts' -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                   _ -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
                 )
-            ((row, col), _):ts -> (acc, symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
-            _ -> (acc, symtbl, [], Just [(Par_error ((row, col), Illformed_Declarement))])
+            ((row, col), _):ts -> (acc, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
+            _ -> (acc, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
   in
     let (r_ident, symtbl')  = sym_anonid_rec symtbl
     in
       case tokens of
-        ((row, col), LBRA):ts' -> (case (decl_fields [] symtbl' (row, col) ts') of
-                                      (fields, symtbl', tokens', Nothing) ->
-                                        (case tokens' of
-                                           ((row', col'), RBRA):ts'' ->
-                                             (case (sym_regist False symtbl' (Sym_record (r_ident, fields)) Mediate_code_fragment_raw_None) of
-                                                (symtbl', Nothing) -> (r_ident , symtbl', ts'', Nothing)
-                                                (symtbl', Just err) -> (r_ident , symtbl', ts'', Just [(Par_error ((row, col), err))]) )
-                                           ((row', col'), _):ts'' -> (r_ident , symtbl', tokens',Just [(Par_error ((row', col'), Illformed_Declarement))])
-                                        )
-                                      (fields, symtbl', tokens', err) -> (r_ident, symtbl', tokens', err)
-                                  )
-        _ -> (r_ident, symtbl', tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
+        ((row, col), LBRA):ts -> (case (decl_fields [] symtbl' tokens) of
+                                    (fields, symtbl', tokens', Nothing) ->
+                                      (case tokens' of
+                                         ((row0', col0'), _):((row', col'), RBRA):ts' ->
+                                           let tokens'' = ((row', col'), RBRA):ts'
+                                           in
+                                             case (sym_regist False symtbl' (Sym_record (r_ident, fields)) Mediate_code_fragment_raw_None) of
+                                               (symtbl'', Nothing) -> (r_ident , symtbl'', tokens'', Nothing)
+                                               (symtbl'', Just err) -> (r_ident , symtbl'', tokens'', Just [(Par_error ((row', col'), err))])
+                                         ((row0', col0'), _):((row', col'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                         ((row0', col0'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row0', col0'), Illformed_Declarement))])
+                                         _ -> assert False (r_ident , symtbl', tokens', Nothing)
+                                      )
+                                    (fields, symtbl', tokens', err) -> (r_ident, symtbl', tokens', err)
+                                 )
+        ((row, col), _):ts -> (r_ident, symtbl', tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
+        _ -> (r_ident, symtbl', tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
 
 
 par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
   case vars of
-    [] -> (symtbl, [], tokens, Nothing)
+    [] -> (symtbl, [], tokens0, Nothing)
     (v@(Mediate_code_raw_Var v_attr)):vs ->
       case (var_type v_attr) of
-        Ras_Record (r_ident, fields) -> --(symtbl, vars, tokens, Nothing)
-          par_record_const [] symtbl (r_ident, fields) tokens0
+        Ras_Record (r_ident, fields) ->
+          (case tokens of
+             ((row, col), DEF):ts -> (case ts of
+                                        ((row', col'), LBRA):ts' -> par_record_const [] symtbl (r_ident, fields) ts
+                                        ((row', col'), _):ts' -> (symtbl, vars, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                        _ -> (symtbl, vars, tokens, Just [(Par_error ((row, col), Illformed_Declarement))]) )
+             _ -> (symtbl, vars, tokens0, Nothing)
+          )              
         _ -> let pairing val =
                    case val of
                      Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
@@ -568,16 +582,18 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
                                            in
                                              case (def_and_reg_vars symtbl' (vs, errs')) of
                                                (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
+                     _ -> assert False (symtbl, [], errs)
              in
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
                in
                  case (case tokens of
-                         ((row, col), (CHR_CONST c)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), ts)
-                         ((row, col), (STR_CONST s)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), ts)
-                         ((row, col), (NUM_CONST n)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), ts)
-                         ((row, col), _):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens)
-                         _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), []) ) of
+                         ((row, col), (CHR_CONST c)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), tokens)
+                         ((row, col), (STR_CONST s)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), tokens)
+                         ((row, col), (NUM_CONST n)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
+                         ((row, col), _):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens0)
+                         _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), tokens0) ) of
                    ((symtbl', vars', err), tokens') -> (symtbl', vars, tokens', err)
+    _ -> (symtbl, [], tokens0, Nothing)
 
 
 par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens) =
@@ -660,7 +676,9 @@ par_var acc symtbl (row, col) tokens =
               case val of
                 Mediate_code_raw_Var v ->
                   let lvalue = Mediate_code_raw_Var v
-                      rvalue = Mediate_code_raw_Literal (var_const v)
+                      rvalue = Mediate_code_raw_Literal (case (var_attr v) of
+                                                           Var_attr_const c -> c
+                                                           _ -> assert False Ras_Const_not_defined )
                   in
                     Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
                 _ -> val
@@ -680,7 +698,7 @@ par_var acc symtbl (row, col) tokens =
             case tokens of
               ((row, col), DEF):ts -> (case ts of
                                          ((row', col'), (CHR_CONST c)):ts' ->
-                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Char_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Char_const c)}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -690,7 +708,7 @@ par_var acc symtbl (row, col) tokens =
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (STR_CONST c)):ts' ->
-                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = String_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (String_const c)}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -700,7 +718,7 @@ par_var acc symtbl (row, col) tokens =
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (NUM_CONST c)):ts' ->
-                                           let rs = map (typecheck (row', col') . folding  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_const = Numeric_const c}))) vars
+                                           let rs = map (typecheck (row', col') . folding  . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (Numeric_const c)}))) vars
                                            in
                                              (case rs of
                                                 ((Mediate_code_raw_Bin {mnemonic = m, operand_0 = var', operand_1 = c'}), Nothing):rs'
@@ -709,15 +727,6 @@ par_var acc symtbl (row, col) tokens =
                                                   | otherwise -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Compiler_internal_error))])
                                                 _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
-                                         ((row', col'), LBRA):ts' ->
-                                           (case var_ty of
-                                              Ras_Record (r_ident, r_fields) -> (case (par_record_const [] symtbl (r_ident, r_fields) ts) of
-                                                                                   (fields, symtbl', tokens', err) ->
-                                                                                     let vars' =  map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_fields = fields})) vars
-                                                                                     in
-                                                                                       (vars', symtbl', tokens', err) )
-                                              _ -> (vars, symtbl, ts', Just [(Par_error ((row', col'), Illformed_Declarement))])
-                                           )
                                          _ -> (vars, symtbl, ts, Just [(Par_error ((row, col), Illformed_Declarement))])
                                       )
               _ -> (case (def_and_reg symtbl (map folding vars)) of
@@ -727,48 +736,44 @@ par_var acc symtbl (row, col) tokens =
       [] -> (acc, symtbl, [], Just [(Par_error ((row, col), Illformed_Declarement))])
       t:ts -> (case t of
                  ((row, col), IDENT v_ident) ->
-                   let vars = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_ident = v_ident,
+                   let vars = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row, col), var_ident = v_ident,
                                                                               var_type = Ras_Bottom_type,
-                                                                              var_const = Ras_Const_not_defined})]
+                                                                              var_attr = Var_attr_const Ras_Const_not_defined})]
                    in
                      case ts of
                        t':ts' -> (case t' of
                                     ((row', col'), COMMA) -> par_var vars symtbl (row', col') ts'
-                                    ((row', col'), TYPED_AS) -> (case ts' of
-                                                                   u:us -> let reveal ty vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = ty})) vars
-                                                                           in
-                                                                             (case u of
-                                                                                (_, BOOLEAN) -> init_and_tychk Ras_Boolean (reveal Ras_Boolean vars) us
-                                                                                (_, INTEGER) -> init_and_tychk Ras_Integer (reveal Ras_Integer vars) us
-                                                                                (_, REAL) -> init_and_tychk Ras_Real (reveal Ras_Real vars) us
-                                                                                (_, STRING) -> init_and_tychk Ras_String (reveal Ras_String vars) us
-                                                                                (_, CHAR) -> init_and_tychk Ras_Char (reveal Ras_Char vars) us
-                                                                                ((row'', col''), RECORD) ->
-                                                                                  (case (par_record symtbl (row'', col'') us) of
-                                                                                     (r_ident, symtbl', us', err) ->
-                                                                                       (case err of
-                                                                                          Nothing ->
-                                                                                            let vars = acc ++ [Mediate_code_raw_Var (Mediate_rec_attr {var_ident = v_ident,
-                                                                                                                                                       var_type = Ras_Bottom_type,
-                                                                                                                                                       var_fields = []})]
-                                                                                            in
-                                                                                              (case (sym_lookup_rec symtbl' r_ident) of
-                                                                                                 Just (r_fields, _) -> let r_type = Ras_Record (r_ident, r_fields)
-                                                                                                                       in
-                                                                                                                         init_and_tychk r_type (reveal r_type vars) us'
-                                                                                                 Nothing -> (vars, symtbl', us', Just [(Par_error ((row', col'), Compiler_internal_error))]) )
-                                                                                          _ -> (vars, symtbl', us', err) )
-                                                                                  )
-                                                                                ((row'', col''), _) -> (acc, symtbl, us, Just [(Par_error ((row'', col''), Illformed_Declarement))])
-                                                                             )
-                                                                   _ -> (vars, symtbl, [], Just [(Par_error ((row', col'), Illformed_Declarement))])
-                                                                )
-                                    -- _ -> (vars, symtbl, ts, Nothing)
+                                    ((row', col'), TYPED_AS) ->
+                                      (case ts' of
+                                         u:us -> let reveal_scl ty vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = ty})) vars
+                                                     reveal_rec (r_ident, r_fields) vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
+                                                                                                                                                      var_attr = Var_attr_fields []})) vars
+                                                 in
+                                                   (case u of
+                                                      (_, BOOLEAN) -> init_and_tychk Ras_Boolean (reveal_scl Ras_Boolean vars) us
+                                                      (_, INTEGER) -> init_and_tychk Ras_Integer (reveal_scl Ras_Integer vars) us
+                                                      (_, REAL) -> init_and_tychk Ras_Real (reveal_scl Ras_Real vars) us
+                                                      (_, STRING) -> init_and_tychk Ras_String (reveal_scl Ras_String vars) us
+                                                      (_, CHAR) -> init_and_tychk Ras_Char (reveal_scl Ras_Char vars) us
+                                                      ((row'', col''), RECORD) ->
+                                                        (case (par_record symtbl ts') of
+                                                           (r_ident, symtbl', us', err) ->
+                                                             (case err of
+                                                                Nothing ->
+                                                                  (case (sym_lookup_rec symtbl' r_ident) of
+                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl (reveal_rec (r_ident, r_fields) vars) us') of
+                                                                                              (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
+                                                                     Nothing -> ((reveal_rec (r_ident, []) vars), symtbl, us', Just [(Par_error ((row'', col''), Compiler_internal_error))]) )
+                                                                _ -> ((reveal_rec (r_ident, []) vars), symtbl', us', err) )
+                                                        )
+                                                      ((row'', col''), _) -> (acc, symtbl, us, Just [(Par_error ((row'', col''), Illformed_Declarement))])
+                                                   )
+                                         _ -> (vars, symtbl, [], Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                      )
                                     _ -> init_and_tychk Ras_Bottom_type vars ts
                                  )
-                       -- _ -> (vars, symtbl, [], Nothing)
                        _ -> init_and_tychk Ras_Bottom_type vars []
-              ):
+              )
 
 
 par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
