@@ -519,8 +519,11 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                       (case tokens' of
                                          ((row0', col0'), _):((row', col'), RBRA):ts' ->
                                            let tokens'' = ((row', col'), RBRA):ts'
+                                               r_fragment = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row, col), var_ident = r_ident,
+                                                                                                    var_type = Ras_Record (r_ident, fields),
+                                                                                                    var_attr = Var_attr_fields []})
                                            in
-                                             case (sym_regist False symtbl' (Sym_record (r_ident, fields)) Mediate_code_fragment_raw_None) of
+                                             case (sym_regist False symtbl' (Sym_record (r_ident, fields)) r_fragment) of
                                                (symtbl'', Nothing) -> (r_ident , symtbl'', tokens'', Nothing)
                                                (symtbl'', Just err) -> (r_ident , symtbl'', tokens'', Just [(Par_error ((row', col'), err))])
                                          ((row0', col0'), _):((row', col'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row', col'), Illformed_Declarement))])
@@ -761,7 +764,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                              (case err of
                                                                 Nothing ->
                                                                   (case (sym_lookup_rec symtbl' r_ident) of
-                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl (reveal_rec (r_ident, r_fields) vars) us') of
+                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl' (reveal_rec (r_ident, r_fields) vars) us') of
                                                                                               (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
                                                                      Nothing -> ((reveal_rec (r_ident, []) vars), symtbl, us', Just [(Par_error ((row'', col''), Compiler_internal_error))]) )
                                                                 _ -> ((reveal_rec (r_ident, []) vars), symtbl', us', err) )
@@ -842,7 +845,7 @@ ras_parse forest symtbl tokens error =
                     in
                       case err of
                         Nothing -> (case tokens' of
-                                      (_, tk'):ts' -> let tokens'' = if (tk' == SEMICOL) then ts' else tokens'
+                                      (_, tk'):ts' -> let tokens'' = if (tk' == SEMICOL) then ts' else (panicked tokens')
                                                       in
                                                         ras_parse forest' symtbl' tokens'' error
                                       _ -> (forest', symtbl', [], error) )
@@ -872,3 +875,6 @@ main src =
                               [] -> []
                               (_, SKIPPED _):ts -> lex_purge ts
                               (t:ts) -> t:(lex_purge ts)
+
+
+-- main "var a :: record { alpha : Integer; beta : String }"
