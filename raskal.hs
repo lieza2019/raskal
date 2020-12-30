@@ -542,13 +542,49 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
     (v@(Mediate_code_raw_Var v_attr)):vs ->
       case (var_type v_attr) of
         Ras_Record (r_ident, fields) ->
-          (case tokens of
-             ((row, col), DEF):ts -> (case ts of
-                                        ((row', col'), LBRA):ts' -> par_record_const [] symtbl (r_ident, fields) ts
-                                        ((row', col'), _):ts' -> (symtbl, vars, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
-                                        _ -> (symtbl, vars, tokens, Just [(Par_error ((row, col), Illformed_Declarement))]) )
-             _ -> (symtbl, vars, tokens0, Nothing)
-          )              
+          let (symtbl', vars', tokens', err) = (case tokens of
+                                                  ((row, col), DEF):ts ->
+                                                    (case ts of
+                                                       ((row', col'), LBRA):ts' ->
+                                                         (case (par_record_const [] symtbl (r_ident, fields) ts) of
+                                                            (symtbl', ini_fields, tokens', err) ->
+                                                              (case err of
+                                                                 Nothing ->
+                                                                   let init ini_fields var =
+                                                                         (case var of
+                                                                            Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}) ->
+                                                                              let v_attr' = (assert (ty == Ras_Record (r_ident, fields)) v_attr){var_attr = Var_attr_fields ini_fields}
+                                                                              in
+                                                                                Mediate_code_raw_Var v_attr'
+                                                                            _ -> assert False var )
+                                                                   in
+                                                                     (symtbl', (map (init ini_fields) vars), tokens', err)
+                                                                 Just _ -> (symtbl', vars, tokens', err) )
+                                                         )
+                                                       ((row', col'), _):ts' -> (symtbl, vars, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                                       _ -> (symtbl, vars, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
+                                                    )
+                                                  _ -> (symtbl, vars, tokens0, Nothing)
+                                               )
+          in
+            let def_and_reg symtbl (vars, errs) =
+                  case vars of
+                    [] -> (symtbl, [], errs)
+                    (v@(Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}))):vs ->
+                      let (symtbl', r) = sym_regist False symtbl (Sym_var (assert (True ) v_attr)) v
+                      in
+                        case r of
+                          Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
+                                        (symtbl', vs', errs') -> (symtbl', v:vs', errs') )
+                          Just sym_err -> let errs' = add_error errs (Par_error ((var_coord v_attr), sym_err))
+                                          in
+                                            case (def_and_reg symtbl' (vs, errs')) of
+                                              (symtbl', vs', errs'') -> (symtbl', v:vs', errs')
+                    _ -> assert False (symtbl, vars, errs)
+            in
+              case (def_and_reg symtbl' (vars', err)) of
+                (symtbl'', vars'', err') -> (symtbl'', vars'', tokens', err')
+        
         _ -> let pairing val =
                    case val of
                      Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
@@ -572,27 +608,27 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
                        (e, err):es -> (case (folding es) of
                                          (es', _) -> (((strip e):es'), err) )
                  
-                 def_and_reg_vars symtbl (vars, errs) =
+                 def_and_reg symtbl (vars, errs) =
                    case vars of
                      [] -> (symtbl, [], errs)
                      (v@(Mediate_code_raw_Var var)):vs ->
                        let (symtbl', r) = sym_regist True symtbl (Sym_var var) v
                        in
                          case r of
-                           Nothing -> (case (def_and_reg_vars symtbl' (vs, errs)) of
+                           Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
                                          (symtbl', vars', errs') -> (symtbl', v:vars', errs') )
                            Just sym_err -> let errs' = add_error errs (Par_error ((var_coord var), sym_err))
                                            in
-                                             case (def_and_reg_vars symtbl' (vs, errs')) of
+                                             case (def_and_reg symtbl' (vs, errs')) of
                                                (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
-                     _ -> assert False (symtbl, [], errs)
+                     _ -> assert False (symtbl, vars, errs)
              in
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
                in
                  case (case tokens of
-                         ((row, col), (CHR_CONST c)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), tokens)
-                         ((row, col), (STR_CONST s)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), tokens)
-                         ((row, col), (NUM_CONST n)):ts -> (def_and_reg_vars symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
+                         ((row, col), (CHR_CONST c)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), tokens)
+                         ((row, col), (STR_CONST s)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), tokens)
+                         ((row, col), (NUM_CONST n)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
                          ((row, col), _):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens0)
                          _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), tokens0) ) of
                    ((symtbl', vars', err), tokens') -> (symtbl', vars, tokens', err)
