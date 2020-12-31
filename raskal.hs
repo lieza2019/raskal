@@ -536,7 +536,7 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
         _ -> (r_ident, symtbl', tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
 
 
-par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
+par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
   case vars of
     [] -> (symtbl, [], tokens0, Nothing)
     (v@(Mediate_code_raw_Var v_attr)):vs ->
@@ -551,12 +551,12 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
                                                               (case err of
                                                                  Nothing ->
                                                                    let init ini_fields var =
-                                                                         (case var of
-                                                                            Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}) ->
-                                                                              let v_attr' = (assert (ty == Ras_Record (r_ident, fields)) v_attr){var_attr = Var_attr_fields ini_fields}
-                                                                              in
-                                                                                Mediate_code_raw_Var v_attr'
-                                                                            _ -> assert False var )
+                                                                         case var of
+                                                                           Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}) ->
+                                                                             let v_attr' = (assert (ty == Ras_Record (r_ident, fields)) v_attr){var_attr = Var_attr_fields ini_fields}
+                                                                             in
+                                                                               Mediate_code_raw_Var v_attr'
+                                                                           _ -> assert False var
                                                                    in
                                                                      (symtbl', (map (init ini_fields) vars), tokens', err)
                                                                  Just _ -> (symtbl', vars, tokens', err) )
@@ -582,8 +582,9 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
                                               (symtbl', vs', errs'') -> (symtbl', v:vs', errs')
                     _ -> assert False (symtbl, vars, errs)
             in
-              case (def_and_reg symtbl' (vars', err)) of
-                (symtbl'', vars'', err') -> (symtbl'', vars'', tokens', err')
+              if reg then (case (def_and_reg symtbl' (vars', err)) of
+                             (symtbl'', vars'', err') -> (symtbl'', vars'', tokens', err') )
+              else (symtbl', vars', tokens', err)
         
         _ -> let pairing val =
                    case val of
@@ -609,19 +610,21 @@ par_init_on_decl symtbl vars tokens0@(((row0, col0), tk0):tokens) =
                                          (es', _) -> (((strip e):es'), err) )
                  
                  def_and_reg symtbl (vars, errs) =
-                   case vars of
-                     [] -> (symtbl, [], errs)
-                     (v@(Mediate_code_raw_Var var)):vs ->
-                       let (symtbl', r) = sym_regist True symtbl (Sym_var var) v
-                       in
-                         case r of
-                           Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
-                                         (symtbl', vars', errs') -> (symtbl', v:vars', errs') )
-                           Just sym_err -> let errs' = add_error errs (Par_error ((var_coord var), sym_err))
-                                           in
-                                             case (def_and_reg symtbl' (vs, errs')) of
-                                               (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
-                     _ -> assert False (symtbl, vars, errs)
+                   if reg then (case vars of
+                                  [] -> (symtbl, [], errs)
+                                  (v@(Mediate_code_raw_Var var)):vs ->
+                                    let (symtbl', r) = sym_regist True symtbl (Sym_var var) v
+                                    in
+                                      case r of
+                                        Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
+                                                      (symtbl', vars', errs') -> (symtbl', v:vars', errs') )
+                                        Just sym_err -> let errs' = add_error errs (Par_error ((var_coord var), sym_err))
+                                                        in
+                                                          case (def_and_reg symtbl' (vs, errs')) of
+                                                            (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
+                                  _ -> assert False (symtbl, vars, errs)
+                               )
+                   else (symtbl, vars, errs)
              in
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
                in
@@ -664,7 +667,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
          _ -> let v_memb = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (-1, -1), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                    var_attr = (Var_attr_const Ras_Const_not_defined)})
               in
-                case (par_init_on_decl symtbl [v_memb] tokens0) of
+                case (par_init_on_decl symtbl False [v_memb] tokens0) of
                   (symtbl', f', tokens', err) -> let acc' = acc ++ f'
                                                  in
                                                    (case err of
@@ -800,7 +803,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                              (case err of
                                                                 Nothing ->
                                                                   (case (sym_lookup_rec symtbl' r_ident) of
-                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl' (reveal_rec (r_ident, r_fields) vars) us') of
+                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl' True (reveal_rec (r_ident, r_fields) vars) us') of
                                                                                               (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
                                                                      Nothing -> ((reveal_rec (r_ident, []) vars), symtbl, us', Just [(Par_error ((row'', col''), Compiler_internal_error))]) )
                                                                 _ -> ((reveal_rec (r_ident, []) vars), symtbl', us', err) )
