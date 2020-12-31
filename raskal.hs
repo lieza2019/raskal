@@ -508,8 +508,10 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                    ((row', col'), _):ts' -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
                    _ -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
                 )
-            ((row, col), _):ts -> (acc, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
-            _ -> (acc, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
+            --((row, col), _):ts -> (acc, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
+            ((row, col), _):ts -> (acc, symtbl, tokens0, Nothing)
+            --_ -> (acc, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
+            _ -> (acc, symtbl, tokens0, Nothing)
   in
     let (r_ident, symtbl')  = sym_anonid_rec symtbl
     in
