@@ -626,7 +626,8 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                                                             (symtbl', vars', errs'') -> (symtbl', v:vars', errs'')
                                   _ -> assert False (symtbl, vars, errs)
                                )
-                   else (symtbl, vars, errs)
+                   else
+                     (symtbl, vars, errs)
              in
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
                in
@@ -636,7 +637,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                          ((row, col), (NUM_CONST n)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
                          ((row, col), _):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens0)
                          _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), tokens0) ) of
-                   ((symtbl', vars', err), tokens') -> (symtbl', vars, tokens', err)
+                   ((symtbl', vars', err), tokens') -> (symtbl', vars', tokens', err)
     _ -> (symtbl, [], tokens0, Nothing)
 
 
@@ -919,3 +920,4 @@ main src =
 
 
 -- main "var a :: record { alpha : Integer; beta : String }"
+-- main "var a :: record { alpha : Integer } := { 3 }"
