@@ -51,6 +51,9 @@ data Ras_Types =
   | Ras_Illformed_type
   deriving (Eq, Ord, Show)
 
+data Boolean_const =
+  Ras_Boolean_const Bool
+  deriving (Eq, Ord, Show)
 
 data Char_const =
   Ras_Char_const Char
@@ -70,7 +73,8 @@ data Record_const =
   deriving (Eq, Ord, Show)
 
 data Ras_Const =
-  Char_const Char_const
+  Boolean_const Boolean_const
+  | Char_const Char_const
   | String_const String_const
   | Numeric_const Numeric_const
   | Record_const Record_const
@@ -85,7 +89,7 @@ data Token_codes =
   | CASE | CHAR | CONST
   | DIV | DO | DOWNTO
   | ELSE | END
-  | FILE | FOR | FUNCTION
+  | FALSE | FILE | FOR | FUNCTION
   | GOTO
   | IF | IN | INTEGER
   | LABEL
@@ -95,7 +99,7 @@ data Token_codes =
   | PACKED | PROCEDURE | PROGRAM
   | REAL | RECORD | REPEAT
   | SET
-  | THEN | TO | TYPE
+  | TRUE | THEN | TO | TYPE
   | UNTIL
   | VAR
   | WHILE | WITH
@@ -115,6 +119,7 @@ data Token_codes =
   | TYPED_AS
   | DEF
   | IDENT String
+  | BOOL_CONST Boolean_const
   | NUM_CONST Numeric_const
   | CHR_CONST Char_const
   | STR_CONST String_const
@@ -162,7 +167,10 @@ lex_main lexicon (row, col) src =
              | (isDigit c) -> lex_const ( par_num_const ((ord c) - (ord '0')) ) (row, col + 1) cs
              | otherwise -> (case (coding "" lexicon (row, col) src) of
                                (tk_str, res, (row', col'), rem) -> (case res of
-                                                                      Just tk_code -> [((row, col), tk_code)]
+                                                                      Just tk_code ->
+                                                                        if (tk_code == TRUE) then [((row, col), BOOL_CONST (Ras_Boolean_const True))]
+                                                                        else if (tk_code == FALSE) then [((row, col), BOOL_CONST (Ras_Boolean_const False))]
+                                                                             else [((row, col), tk_code)]
                                                                       Nothing -> [((row, col), IDENT tk_str)]
                                                                    ) ++ (lex_main lexicon (row', col') rem)
                             )
@@ -245,6 +253,7 @@ data Mediate_code_fragment_raw =
 is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
   case ty2 of
     Ras_Top_type -> True
+    Ras_Boolean -> (ty1 == Ras_Boolean) || (ty1 == Ras_Bottom_type)
     Ras_Integer -> (ty1 == Ras_Integer) || (ty1 == Ras_Bottom_type)
     Ras_Real -> (ty1 == Ras_Integer) || (ty1 == Ras_Real) || (ty1 == Ras_Bottom_type)
     Ras_String -> (ty1 == Ras_Char) || (ty1 == Ras_String) || (ty1 == Ras_Bottom_type)
@@ -255,14 +264,17 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
 
 tyinf expr = {- obtaining the type of expr, with type inference. -}
   case expr of
-    Mediate_code_raw_Var var -> var_type var
     Mediate_code_raw_Literal c -> (case c of
+                                     Boolean_const c' -> Ras_Boolean
                                      Char_const c' -> Ras_Char
                                      String_const c' -> Ras_String
                                      Numeric_const c' -> (case c' of
                                                             Ras_Integer_const c_i -> Ras_Integer
-                                                            Ras_Real_const c_r -> Ras_Real) )
-                                                            
+                                                            Ras_Real_const c_r -> Ras_Real )
+                                     Record_const _ -> assert False Ras_Unknown_type
+                                     _ -> Ras_Unknown_type
+                                  )
+    Mediate_code_raw_Var var -> var_type var
     _ -> Ras_Unknown_type
 
 
@@ -632,6 +644,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
                in
                  case (case tokens of
+                         ((row, col), (BOOL_CONST b)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Boolean_const b))) vars)), tokens)
                          ((row, col), (CHR_CONST c)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), tokens)
                          ((row, col), (STR_CONST s)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), tokens)
                          ((row, col), (NUM_CONST n)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
@@ -715,7 +728,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                        )
 
 
-par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
+{- par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
   let init_and_tychk var_ty vars tokens0@(((row0, col0), _):tokens) =
         let folding val =
               case val of
@@ -750,7 +763,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                   | c' == (Mediate_code_raw_Literal (Char_const c)) -> (case (def_and_reg symtbl (map fst rs)) of
                                                                                                           (symtbl', vars') -> (vars', symtbl', ts, Nothing) )
                                                   | otherwise -> (vars, symtbl, ts, Just [(Par_error ((row', col'), Compiler_internal_error))])
-                                                _ -> (vars, symtbl, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                               _ -> (vars, symtbl, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
                                              )
                                          ((row', col'), (STR_CONST c)):ts' ->
                                            let rs = map (typecheck (row', col') . folding . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const (String_const c)}))) vars
@@ -821,8 +834,73 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                     _ -> init_and_tychk Ras_Bottom_type vars tokens
                                  )
                        _ -> init_and_tychk Ras_Bottom_type vars tokens
-              )
+              ) -}
 
+par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
+  let tychk_and_reg symtbl var_ty vars tokens0@(((row0, col0), _):tokens) =
+        let def_and_reg symtbl vars =
+              case vars of
+                [] -> (symtbl, [])
+                (v@(Mediate_code_raw_Var var)):vs ->
+                  let (symtbl', r) = sym_regist False symtbl (Sym_var var) v
+                  in
+                    (case r of
+                       Nothing -> (case (def_and_reg symtbl' vs) of
+                                     (symtbl', vs') -> (symtbl', v:vs') )
+                       Just err -> def_and_reg symtbl' vs
+                     )
+        in
+            case tokens of
+              ((row, col), DEF):ts -> (case (par_init_on_decl symtbl True vars tokens) of
+                                         (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
+              _ -> (case (def_and_reg symtbl vars) of
+                      (symtbl', vars') -> (vars', symtbl', tokens0, Nothing) )
+  in
+    case tokens of
+      [] -> (acc, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
+      t:ts -> (case t of
+                 ((row, col), IDENT v_ident) ->
+                   let vars = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row, col), var_ident = v_ident,
+                                                                              var_type = Ras_Bottom_type,
+                                                                              var_attr = Var_attr_const Ras_Const_not_defined})]
+                   in
+                     case ts of
+                       t':ts' -> (case t' of
+                                    ((row', col'), COMMA) -> par_var vars symtbl ts
+                                    ((row', col'), TYPED_AS) ->
+                                      (case ts' of
+                                         u:us -> let reveal_scl ty vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = ty})) vars
+                                                     {-reveal_rec (r_ident, r_fields) vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
+                                                                                                                                                     var_attr = Var_attr_fields []})) vars -}
+                                                     reveal_rec (r_ident, r_fields) vars =
+                                                       map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
+                                                                                                                 var_attr = Var_attr_const Ras_Const_not_defined})) vars
+                                                 in
+                                                   (case u of
+                                                      (_, BOOLEAN) -> tychk_and_reg symtbl Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
+                                                      (_, INTEGER) -> tychk_and_reg symtbl Ras_Integer (reveal_scl Ras_Integer vars) ts'
+                                                      (_, REAL) -> tychk_and_reg symtbl Ras_Real (reveal_scl Ras_Real vars) ts'
+                                                      (_, STRING) -> tychk_and_reg symtbl Ras_String (reveal_scl Ras_String vars) ts'
+                                                      (_, CHAR) -> tychk_and_reg symtbl Ras_Char (reveal_scl Ras_Char vars) ts'
+                                                      ((row'', col''), RECORD) ->
+                                                        (case (par_record symtbl ts') of
+                                                           (r_ident, symtbl', us', err) ->
+                                                             (case err of
+                                                                Nothing ->
+                                                                  (case (sym_lookup_rec symtbl' r_ident) of
+                                                                     Just (r_fields, _) -> (case (par_init_on_decl symtbl' True (reveal_rec (r_ident, r_fields) vars) us') of
+                                                                                              (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
+                                                                     Nothing -> ((reveal_rec (r_ident, []) vars), symtbl, us', Just [(Par_error ((row'', col''), Compiler_internal_error))]) )
+                                                                _ -> ((reveal_rec (r_ident, []) vars), symtbl', us', err) )
+                                                        )
+                                                      ((row'', col''), _) -> (acc, symtbl, ts, Just [(Par_error ((row'', col''), Illformed_Declarement))])
+                                                   )
+                                         _ -> (vars, symtbl, ts, Just [(Par_error ((row', col'), Illformed_Declarement))])
+                                      )
+                                    _ -> tychk_and_reg symtbl Ras_Bottom_type vars tokens
+                                 )
+                       _ -> tychk_and_reg symtbl Ras_Bottom_type vars tokens
+              )
 
 par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
 
@@ -898,15 +976,25 @@ ras_parse forest symtbl tokens error =
 
 
 main src =
-  let lexicon = [("and", AND), ("array", ARRAY), ("begin", BEGIN), ("boolean", BOOLEAN), ("case", CASE),
-                 ("char", CHAR), ("const", CONST), ("div", DIV), ("do", DO), ("downto", DOWNTO),
-                 ("else", ELSE), ("end", END), ("file", FILE), ("for", FOR),
-                 ("function", FUNCTION), ("goto", GOTO), ("if", IF), ("in", IN), ("Integer", INTEGER),
-                 ("label", LABEL), ("mod", MOD), ("nil", NIL), ("not", NOT),
-                 ("of", OF), ("or", OR), ("packed", PACKED), ("procedure", PROCEDURE),
-                 ("program", PROGRAM), ("real", REAL), ("record", RECORD), ("Real", REAL), ("repeat", REPEAT), ("set", SET),
-                 ("String", STRING), ("then", THEN), ("to", TO), ("type", TYPE), ("until", UNTIL),
-                 ("var", VAR), ("while", WHILE), ("with", WITH)]
+  let lexicon = [("and", AND), ("array", ARRAY),
+                 ("begin", BEGIN), ("boolean", BOOLEAN),
+                 ("case", CASE), ("char", CHAR), ("const", CONST),
+                 ("div", DIV), ("do", DO), ("downto", DOWNTO),
+                 ("else", ELSE), ("end", END),
+                 ("false", FALSE), ("file", FILE), ("for", FOR), ("function", FUNCTION),
+                 ("goto", GOTO),
+                 ("if", IF), ("in", IN), ("integer", INTEGER),
+                 ("label", LABEL),
+                 ("mod", MOD),
+                 ("nil", NIL), ("not", NOT),
+                 ("of", OF), ("or", OR),
+                 ("packed", PACKED), ("procedure", PROCEDURE), ("program", PROGRAM),
+                 ("real", REAL), ("record", RECORD), ("real", REAL), ("repeat", REPEAT),
+                 ("set", SET), ("string", STRING),
+                 ("then", THEN), ("to", TO), ("true", TRUE), ("type", TYPE),
+                 ("until", UNTIL),
+                 ("var", VAR),
+                 ("while", WHILE), ("with", WITH)]
   in
     do tokens <- (case (lex_main lexicon (1,1) src) of
                     [] -> Nothing
