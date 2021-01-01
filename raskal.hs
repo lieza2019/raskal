@@ -791,8 +791,11 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                     ((row', col'), TYPED_AS) ->
                                       (case ts' of
                                          u:us -> let reveal_scl ty vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = ty})) vars
-                                                     reveal_rec (r_ident, r_fields) vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
-                                                                                                                                                     var_attr = Var_attr_fields []})) vars
+                                                     {-reveal_rec (r_ident, r_fields) vars = map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
+                                                                                                                                                     var_attr = Var_attr_fields []})) vars -}
+                                                     reveal_rec (r_ident, r_fields) vars =
+                                                       map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, r_fields),
+                                                                                                                 var_attr = Var_attr_const Ras_Const_not_defined})) vars
                                                  in
                                                    (case u of
                                                       (_, BOOLEAN) -> init_and_tychk Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
