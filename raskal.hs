@@ -301,6 +301,12 @@ typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, b
     _ -> (expr, Nothing)
 
 
+data Sym_category =
+  Sym_func
+  | Sym_record
+  | Sym_var
+  deriving (Eq, Ord, Show)
+
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
   | Attrib_Rec (String, [Ras_Record_field])
@@ -325,30 +331,47 @@ data Symtbl_cluster =
   | Sym_add Symtbl_node Symtbl_cluster
   deriving (Eq, Ord, Show)
 
-
 data Symtbl_anon_ident =
   Symtbl_anon_ident {sym_anon_var :: Integer, sym_anon_record :: Integer}
   deriving (Eq, Ord, Show)
 
-data Symtbl =
+data Sym_tbl =
   Scope_empty
-  | Scope_add (Int, Symtbl_anon_ident, Symtbl_cluster) Symtbl
+  | Scope_add (Int, Symtbl_anon_ident, Symtbl_cluster) Sym_tbl
+  deriving (Eq, Ord, Show)
+
+data Symtbl =
+  Symtbl {sym_func :: Sym_tbl, sym_record :: Sym_tbl, sym_var :: Sym_tbl}
   deriving (Eq, Ord, Show)
 
 
-sym_search symtbl ident =
-  let walk syms ident =
-        case syms of
-          Sym_empty -> Nothing
-          Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just (sym, syms')
-                              else walk syms' ident
+sym_search symtbl cat ident =
+  let categorize symtbl cat =
+        case cat of
+          Sym_func -> sym_func symtbl
+          Sym_record -> sym_record symtbl
+          Sym_var -> sym_var symtbl
   in
-    case symtbl of
-      Scope_empty -> Nothing
-      Scope_add (lv, anon_idents, syms) symtbl' ->
-        (case (walk syms ident) of
-            Just (found, syms') -> Just ((sym_attrib found), Scope_add (lv, anon_idents, syms') symtbl')
-            Nothing -> sym_search symtbl' ident )
+    let walk syms ident =
+          case syms of
+            Sym_empty -> Nothing
+            Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just (sym, syms')
+                                 else walk syms' ident
+    in
+      let sym_tbl = categorize symtbl cat
+      in
+        case sym_tbl of
+          Scope_empty -> Nothing
+          Scope_add (lv, anon_idents, syms) sym_tbl' ->
+            (case (walk syms ident) of
+               Just (found, syms') -> Just ((sym_attrib found), Scope_add (lv, anon_idents, syms') sym_tbl')
+               Nothing -> let symtbl' = (case cat of
+                                           Sym_func -> symtbl{sym_func = sym_tbl'}
+                                           Sym_record -> symtbl{sym_record = sym_tbl'}
+                                           Sym_var -> symtbl{sym_var = sym_tbl'} )
+                          in
+                            sym_search symtbl' cat ident
+            )
 
 
 sym_lookup_var symtbl ident =
