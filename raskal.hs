@@ -302,10 +302,16 @@ typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, b
 
 
 data Sym_category =
-  Sym_func
-  | Sym_record
-  | Sym_var
+  Cat_Sym_typedef
+  | Cat_Sym_func
+  | Cat_Sym_record
+  | Cat_Sym_decl
   deriving (Eq, Ord, Show)
+
+data Sym_entity =
+  Sym_var Mediate_var_attr
+  | Sym_record (String, [Ras_Record_field])
+    deriving (Eq, Ord, Show)
 
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
@@ -320,11 +326,6 @@ data Sym_attrib =
 data Symtbl_node =
   Sym_entry {sym_ident :: String, sym_attrib :: Sym_attrib}
   deriving (Eq, Ord, Show)
-
-data Sym_entity =
-  Sym_var Mediate_var_attr
-  | Sym_record (String, [Ras_Record_field])
-    deriving (Eq, Ord, Show)
 
 data Symtbl_cluster =
   Sym_empty
@@ -341,66 +342,81 @@ data Sym_tbl =
   deriving (Eq, Ord, Show)
 
 data Symtbl =
-  Symtbl {sym_func :: Sym_tbl, sym_record :: Sym_tbl, sym_var :: Sym_tbl}
+  Symtbl {sym_typedef :: Sym_tbl, sym_func :: Sym_tbl, sym_record :: Sym_tbl, sym_decl :: Sym_tbl}
   deriving (Eq, Ord, Show)
 
 
+sym_categorize symtbl cat =
+  case cat of
+    Cat_Sym_typedef -> sym_typedef symtbl
+    Cat_Sym_func -> sym_func symtbl
+    Cat_Sym_record -> sym_record symtbl
+    Cat_Sym_decl -> sym_decl symtbl
+
+
+sym_update symtbl cat tbl =
+  case cat of
+    Cat_Sym_typedef -> symtbl{sym_typedef = tbl}
+    Cat_Sym_func -> symtbl{sym_func = tbl}
+    Cat_Sym_record -> symtbl{sym_record = tbl}
+    Cat_Sym_decl -> symtbl{sym_decl = tbl}
+
+
 sym_search symtbl cat ident =
-  let categorize symtbl cat =
-        case cat of
-          Sym_func -> sym_func symtbl
-          Sym_record -> sym_record symtbl
-          Sym_var -> sym_var symtbl
+  let walk syms ident =
+        case syms of
+          Sym_empty -> Nothing
+          Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just (sym, syms')
+                               else walk syms' ident
   in
-    let walk syms ident =
-          case syms of
-            Sym_empty -> Nothing
-            Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just (sym, syms')
-                                 else walk syms' ident
+    let sym_tbl = sym_categorize symtbl cat
     in
-      let sym_tbl = categorize symtbl cat
-      in
-        case sym_tbl of
-          Scope_empty -> Nothing
-          Scope_add (lv, anon_idents, syms) sym_tbl' ->
-            (case (walk syms ident) of
-               Just (found, syms') -> Just ((sym_attrib found), Scope_add (lv, anon_idents, syms') sym_tbl')
-               Nothing -> let symtbl' = (case cat of
-                                           Sym_func -> symtbl{sym_func = sym_tbl'}
-                                           Sym_record -> symtbl{sym_record = sym_tbl'}
-                                           Sym_var -> symtbl{sym_var = sym_tbl'} )
-                          in
-                            sym_search symtbl' cat ident
-            )
+      case sym_tbl of
+        Scope_empty -> Nothing
+        Scope_add (lv, anon_idents, syms) sym_tbl' ->
+          (case (walk syms ident) of
+             Just (found, syms') -> Just ((sym_attrib found), sym_update symtbl cat (Scope_add (lv, anon_idents, syms') sym_tbl'))
+             Nothing -> sym_search (sym_update symtbl cat sym_tbl') cat ident
+          )
 
 
-sym_lookup_var symtbl ident =
-  let trying = sym_search symtbl ident
+sym_lookup_var symtbl cat ident =
+  let trying = sym_search symtbl cat ident
   in
     case trying of
       Nothing -> Nothing
-      Just (attr@(Sym_attrib {attr_decl = decl_type}), remainders) -> (case decl_type of       
-                                                                         Attrib_Var sig -> Just (sig, attr)
-                                                                         _ -> sym_lookup_var remainders ident )
+      Just (attr, remainders) -> (case (attr_decl attr) of
+                                    Attrib_Var av -> Just (av, attr)
+                                    _ -> sym_lookup_var remainders cat ident )
 
-sym_lookup_rec symtbl ident =
-  let trying = sym_search symtbl ident
+sym_lookup_var_decl symtbl ident =
+  sym_lookup_var symtbl Cat_Sym_decl ident
+
+
+sym_lookup_rec symtbl cat ident =
+  let trying = sym_search symtbl cat ident
   in
     case trying of
       Nothing -> Nothing
-      Just (attr@(Sym_attrib {attr_decl = decl_type}), remainders) -> (case decl_type of
-                                                                         Attrib_Rec (_, sig) -> Just (sig, attr)
-                                                                         _ -> sym_lookup_rec remainders ident )
+      Just (attr, remainders) -> (case (attr_decl attr) of
+                                    Attrib_Rec (_, ar) -> Just (ar, attr)
+                                    _ -> sym_lookup_rec remainders cat ident )
+
+sym_lookup_rec_decl symtbl ident =
+  sym_lookup_rec symtbl Cat_Sym_decl ident
 
 
-sym_lookup_type symtbl ident =
-  let trying = sym_search symtbl ident
+sym_lookup_typedef symtbl cat ident =
+  let trying = sym_search symtbl cat ident
   in
     case trying of
       Nothing -> Nothing
-      Just (attr@(Sym_attrib {attr_decl = decl_type}), remainders) -> (case decl_type of
-                                                                         Attrib_Typedef ty -> Just (ty, attr)
-                                                                         _ -> sym_lookup_type remainders ident )
+      Just (attr, remainders) -> (case (attr_decl attr) of
+                                    Attrib_Typedef at -> Just (at, attr)
+                                    _ -> sym_lookup_typedef remainders cat ident )
+
+sym_lookup_typedef_decl symtbl ident =
+  sym_lookup_typedef symtbl Cat_Sym_decl ident
 
 
 walk_on_scope sym_cluster (kind, tgt_id) =
@@ -411,94 +427,93 @@ walk_on_scope sym_cluster (kind, tgt_id) =
             Sym_var _ -> (case attr_type of
                             Attrib_Var _ -> True
                             _ -> False )
-            Sym_record _ -> (case attr_type of
-                               Attrib_Rec _ -> True
-                               _ -> False )
+            Sym_record _  -> (case attr_type of
+                                Attrib_Rec _ -> True
+                                _ -> False )
   in
     case sym_cluster of
       Sym_empty -> Nothing
       Sym_add sym sym_cluster' -> if ((cmp_kind sym) && ((sym_ident sym) == tgt_id)) then Just sym
                                   else walk_on_scope sym_cluster' (kind, tgt_id)
 
-sym_regist ovwt symtbl entity fragment =
-  let reg_sym ident sym =
-        case symtbl of
+sym_regist ovwt symtbl cat entity fragment =
+  let reg_sym sym_tbl ident sym =
+        case sym_tbl of
           Scope_empty ->
             ((Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
-          Scope_add (lv, anon_ident_crnt, syms) symtbl' ->
+          Scope_add (lv, anon_ident_crnt, syms) sym_tbl' ->
             (case syms of
-               Sym_empty -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym Sym_empty)) symtbl'), Nothing)
+               Sym_empty -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym Sym_empty)) sym_tbl'), Nothing)
                Sym_add _ _ -> (case (walk_on_scope syms (entity, ident)) of
-                                 Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
-                                           else ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
-                                 Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) symtbl'), Nothing)
+                                 Just e -> if (not ovwt) then (sym_tbl, Just Symbol_redifinition)
+                                           else ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) sym_tbl'), Nothing)
+                                 Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) sym_tbl'), Nothing)
                               )
             )
   in
-  case entity of
-    Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
-      let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
-      in
-        reg_sym v_id node
-    Sym_record (rec_ident, fields) ->
-      let node = Sym_entry {sym_ident = rec_ident, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec (rec_ident, fields), attr_fragment = fragment}}
-      in
-        reg_sym rec_ident node
-
-
-{- data Sym_attrib =
-  Attrib_Var {attr_type :: Ras_Types, attr_init :: Ras_Const, attr_fragment :: Mediate_code_fragment_raw}
-  | Attrib_Rec {attr_decl :: [Ras_Record_field], attr_fragment :: Mediate_code_fragment_raw}
-  deriving (Eq, Ord, Show)
-
-sym_regist ovwt symtbl decl@Mediate_var_attr{var_ident = v_id, var_type = v_ty, var_const = v_ini_val} fragment =
-  let node = Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}}
-  in
-    case symtbl of
-      Scope_empty -> ((Scope_add (0, (Sym_add node Sym_empty)) Scope_empty), Nothing)
-      Scope_add (lv, syms) symtbl' -> (case syms of
-                                         Sym_empty -> ((Scope_add (lv, (Sym_add node Sym_empty)) symtbl'), Nothing)
-                                         Sym_add _ _ -> (case (walk_on_scope syms v_id) of
-                                                           Just e -> if (not ovwt) then (symtbl, Just Symbol_redifinition)
-                                                                     else ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing)
-                                                           Nothing -> ((Scope_add (lv, (Sym_add node syms)) symtbl'), Nothing) )
-                                      ) -}
-
-
-enter_scope symtbl =
-  case symtbl of
-    Scope_empty -> Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, Sym_empty) Scope_empty
-    Scope_add (lv, sym_anon_ident, _) _ -> Scope_add (lv + 1, sym_anon_ident, Sym_empty) symtbl
-
-
-sym_anonid_var symtbl =
-  let d2s_var m = "var_" ++ (show m)
-  in
-    let symtbl' = (case symtbl of
-                     Scope_empty -> enter_scope symtbl
-                     Scope_add _ _ -> symtbl )
+    let sym_tbl' =
+          let sym_tbl = sym_categorize symtbl cat
+          in
+            case entity of
+              Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
+                reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}})
+              Sym_record (rec_id, fields) ->
+                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec (rec_id, fields), attr_fragment = fragment}})
     in
-      case symtbl' of
-        Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_var = crnt_top}), syms) symtbl'' ->
-          ((d2s_var crnt_top), Scope_add (lv, anon_crnt {sym_anon_var = crnt_top + 1}, syms) symtbl'')
+      case sym_tbl' of
+        (tbl', _) -> sym_update symtbl cat tbl'
 
 
-sym_anonid_rec symtbl =
-  let d2s_rec m = "rec_" ++ (show m)
+enter_scope symtbl cat =
+  let sym_tbl = sym_categorize symtbl cat
   in
-    let symtbl' = (case symtbl of
-                     Scope_empty -> enter_scope symtbl
-                     Scope_add _ _ -> symtbl )
+    let sym_tbl' = case sym_tbl of
+                     Scope_empty -> Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, Sym_empty) Scope_empty
+                     Scope_add (lv, sym_anon_ident, _) _ -> Scope_add (lv + 1, sym_anon_ident, Sym_empty) sym_tbl
     in
-      case symtbl' of
-        Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_record = crnt_top}), syms) symtbl'' ->
-          ((d2s_rec crnt_top), Scope_add (lv, anon_crnt {sym_anon_record = crnt_top + 1}, syms) symtbl'')
+      sym_update symtbl cat sym_tbl'
 
 
-leave_scope symtbl =
-  case symtbl of
-    Scope_empty -> Scope_empty
-    Scope_add sco symtbl' -> symtbl'
+sym_anonid_var symtbl cat pref suff sep =
+  let d2s_var m = "var_" ++ ((pref ++ sep) ++ (show m) ++ (sep ++ suff))
+      sym_tbl = sym_categorize symtbl cat
+  in
+    let sym_tbl' = (case sym_tbl of
+                      Scope_empty -> sym_categorize (enter_scope symtbl cat) cat
+                      Scope_add _ _ -> sym_tbl )
+    in
+      let r = case sym_tbl' of
+                Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_var = crnt_top}), syms) sym_tbl'' ->
+                  ((d2s_var crnt_top), Scope_add (lv, anon_crnt {sym_anon_var = crnt_top + 1}, syms) sym_tbl'')
+      in
+        case r of
+          (anonid, tbl') -> (anonid ++ suff, sym_update symtbl cat tbl')
+
+
+sym_anonid_rec symtbl cat pref suff sep =
+  let d2s_rec m = "rec_" ++ ((pref ++ sep) ++ (show m) ++ (sep ++ suff))
+      sym_tbl = sym_categorize symtbl cat
+  in
+    let sym_tbl' = (case sym_tbl of
+                      Scope_empty -> sym_categorize (enter_scope symtbl cat) cat
+                      Scope_add _ _ -> sym_tbl )
+    in
+      let r = case sym_tbl' of
+                Scope_add (lv, anon_crnt@(Symtbl_anon_ident {sym_anon_record = crnt_top}), syms) sym_tbl'' ->
+                  ((d2s_rec crnt_top), Scope_add (lv, anon_crnt {sym_anon_record = crnt_top + 1}, syms) sym_tbl'')
+      in
+        case r of
+          (anonid, tbl') -> (anonid, sym_update symtbl cat tbl')
+
+
+leave_scope symtbl cat =
+  let sym_tbl = sym_categorize symtbl cat
+  in
+    let sym_tbl' = case sym_tbl of
+                     Scope_empty -> Scope_empty
+                     Scope_add sco sym_tbl' -> sym_tbl'
+    in
+      sym_update symtbl cat sym_tbl'
 
 
 par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
@@ -517,7 +532,7 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                  Nothing -> (Ras_Unknown_type, symtbl', tokens', Just [(Par_error ((row, col), Compiler_internal_error))]) )
                       (_, symtbl', tokens', err) -> (Ras_Illformed_type, symtbl', tokens', err)
                   )
-                {-((row, col), IDENT t_ident):ts -> (case (sym_lookup_type symtbl t_ident) of
+                {-((row, col), IDENT t_ident):ts -> (case (sym_lookup_typedef symtbl t_ident) of
                                                      Just (sig, attr) -> (Ras_DefType sig, symtbl, ts, Nothing)
                                                      Nothing -> (Ras_Unknown_type, symtbl, ts, Just [(Par_error ((row, col), Illformed_Declarement))]) ) -}
                 ((row, col), _):ts -> (Ras_Illformed_type, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
@@ -723,7 +738,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                                    Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row_t, col_t), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                            var_attr = Var_attr_fields (padding (row_t, col_t) r_fields)})
                                  {- Ras_Typedef ty_ident ->
-                                   (case (sym_lookup_type symtbl ty_ident) of
+                                   (case (sym_lookup_typedef symtbl ty_ident) of
                                       Just (ty_def, _) -> 
                                         (case (padding [ty_def]) of
                                            p:ps -> assert (ps == []) (Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
