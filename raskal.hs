@@ -625,7 +625,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                   case vars of
                     [] -> (symtbl, [], errs)
                     (v@(Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}))):vs ->
-                      let (symtbl', r) = sym_regist False symtbl (Sym_var (assert (True ) v_attr)) v
+                      let (symtbl', r) = sym_regist False symtbl Cat_Sym_decl (Sym_var (assert (True ) v_attr)) v
                       in
                         case r of
                           Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
@@ -633,7 +633,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                           Just sym_err -> let errs' = add_error errs (Par_error ((var_coord v_attr), sym_err))
                                           in
                                             case (def_and_reg symtbl' (vs, errs')) of
-                                              (symtbl', vs', errs'') -> (symtbl', v:vs', errs')
+                                              (symtbl', vs', errs'') -> (symtbl', v:vs', errs'')
                     _ -> assert False (symtbl, vars, errs)
             in
               if reg then (case (def_and_reg symtbl' (vars', err)) of
@@ -667,7 +667,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                    if reg then (case vars of
                                   [] -> (symtbl, [], errs)
                                   (v@(Mediate_code_raw_Var var)):vs ->
-                                    let (symtbl', r) = sym_regist True symtbl (Sym_var var) v
+                                    let (symtbl', r) = sym_regist True symtbl Cat_Sym_decl (Sym_var var) v
                                     in
                                       case r of
                                         Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
@@ -851,7 +851,7 @@ par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothin
 
 par_asgn symtbl ((row, col), ident) tokens =
   -- (symtbl, [], tokens)
-  case (sym_lookup_var symtbl ident) of
+  case (sym_lookup_var symtbl Cat_Sym_decl ident) of
     Just (sig, attr) ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = Mediate_code_fragment_raw_None}
       in
@@ -860,7 +860,7 @@ par_asgn symtbl ((row, col), ident) tokens =
            ((row', col'), ASGN):ts ->
              let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
                    case lvalue of
-                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl (Sym_var var) lvalue
+                     Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl Cat_Sym_decl (Sym_var var) lvalue
                                                  in
                                                    (case r of
                                                       Nothing -> (expr_asgn, symtbl', Nothing)
@@ -945,7 +945,10 @@ main src =
                     ts -> if ( (length ts) > (length (lex_purge ts)) ) then Nothing else Just ts )
 --       return (par_real_const PHONY tokens)
        tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
-       return (ras_parse [] Scope_empty tokens' Nothing)
+       --return (ras_parse [] Scope_empty tokens' Nothing)
+       return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
+               in
+                 ras_parse [] symtbl tokens' Nothing)
        
        where
          lex_purge tokens = case tokens of
