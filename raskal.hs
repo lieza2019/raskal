@@ -1,6 +1,7 @@
 -- :set -XRecordWildCards
 {-# LANGUAGE RecordWildCards #-}
 
+import System.Environment
 import Control.Exception
 import Data.Char
 import Debug.Trace
@@ -473,7 +474,6 @@ walk_on_scope sym_cluster (kind, tgt_id) =
 sym_regist ovwt symtbl cat entity fragment =
   trace "in sym_regist" (
   let reg_sym sym_tbl ident sym =
-        trace "in reg_sym @sym_regist" (
         case sym_tbl of
           Scope_empty ->
             ((Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
@@ -486,7 +486,6 @@ sym_regist ovwt symtbl cat entity fragment =
                                  Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) sym_tbl'), Nothing)
                               )
             )
-        )
   in
     let sym_tbl' =
           let sym_tbl = sym_categorize symtbl cat
@@ -819,6 +818,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                        )
   )
 
+
 par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
   trace "in par_var" (
   let tychk_and_reg symtbl var_ty vars tokens0@(((row0, col0), _):tokens) =
@@ -872,18 +872,20 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                         (case (par_record symtbl ts') of
                                                            (r_ident, symtbl', us', err) ->
                                                              (case err of
-                                                                Nothing ->
+                                                                Nothing ->                                                                  
                                                                   (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
                                                                      Just (r_fields, r_attr) ->
-                                                                       let (r_ident', symtbl') = sym_anonid_rec symtbl' Cat_Sym_decl "" "" ""
+                                                                       let (r_ident', symtbl'') = sym_anonid_rec symtbl' Cat_Sym_decl "" "" ""
                                                                        in
-                                                                         case (sym_regist False symtbl' Cat_Sym_decl (Sym_record (r_ident', r_fields)) (attr_fragment r_attr)) of
-                                                                           (symtbl', err') -> (case err' of
-                                                                                                 Nothing -> (case (par_init_on_decl symtbl' True (reveal_rec symtbl' r_ident' vars) us') of
-                                                                                                                (symtbl'', vars', tokens', e) -> (vars', symtbl'', tokens', e) )
-                                                                                                 _ -> ((reveal_rec symtbl' r_ident' vars), symtbl', us',
-                                                                                                       Just [(Par_error ((row'', col''), Compiler_internal_error))])
-                                                                                              )
+                                                                         --trace ("IN par_var" ++ " " ++ ("(" ++ (show symtbl'') ++ ")")) (
+                                                                         case (sym_regist False symtbl'' Cat_Sym_decl (Sym_record (r_ident', r_fields)) (attr_fragment r_attr)) of
+                                                                           (symtbl_reg, err') -> (case err' of
+                                                                                                    Nothing -> (case (par_init_on_decl symtbl_reg True (reveal_rec symtbl_reg r_ident' vars) us') of
+                                                                                                                  (symtbl_reg', vars', tokens', e) -> (vars', symtbl_reg', tokens', e) )
+                                                                                                    _ -> ((reveal_rec symtbl_reg r_ident' vars), symtbl_reg, us',
+                                                                                                          Just [(Par_error ((row'', col''), Compiler_internal_error))])
+                                                                                                 )
+                                                                         --)
                                                                      Nothing -> ((reveal_rec symtbl' r_ident vars), symtbl', us', Just [(Par_error ((row'', col''), Compiler_internal_error))])
                                                                   )
                                                                 _ -> ((reveal_rec symtbl' r_ident vars), symtbl', us', err)
@@ -947,6 +949,7 @@ par_asgn symtbl ((row, col), ident) tokens =
         )
   )
 
+
 ras_parse forest symtbl tokens error =
   trace "in ras_parse" (
   let panicked ts =
@@ -975,6 +978,7 @@ ras_parse forest symtbl tokens error =
                         Just _ -> ras_parse forest' symtbl' (panicked tokens') (append_error error err)
   )
 
+
 main src =
   let lexicon = [("and", AND), ("array", ARRAY),
                  ("begin", BEGIN), ("boolean", BOOLEAN),
@@ -996,23 +1000,22 @@ main src =
                  ("var", VAR),
                  ("while", WHILE), ("with", WITH)]
   in
-    do tokens <- (case (lex_main lexicon (1,1) src) of
-                    [] -> Nothing
-                    ts -> if ( (length ts) > (length (lex_purge ts)) ) then Nothing else Just ts )
---       return (par_real_const PHONY tokens)
-       tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
-       --return (ras_parse [] Scope_empty tokens' Nothing)
-       return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
-               in
-                 ras_parse [] symtbl tokens' Nothing)
-       
-       where
-         lex_purge tokens = case tokens of
-                              [] -> []
-                              (_, SKIPPED _):ts -> lex_purge ts
-                              (t:ts) -> t:(lex_purge ts)
+    do
+      tokens <- case (lex_main lexicon (1,1) src) of
+                  [] -> Nothing
+                  ts -> if ( (length ts) > (length (lex_purge ts)) ) then Nothing else Just ts
+      -- return (par_real_const PHONY tokens)
+      tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
+      --return (ras_parse [] Scope_empty tokens' Nothing)
+      return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
+              in
+                ras_parse [] symtbl tokens' Nothing)
+        where
+          lex_purge tokens = case tokens of
+                               [] -> []
+                               (_, SKIPPED _):ts -> lex_purge ts
+                               (t:ts) -> t:(lex_purge ts)
 
 
 -- main "var a :: record { alpha : integer; beta : string }"
 -- main "var a :: record { alpha : integer } := { 3 }"
-
