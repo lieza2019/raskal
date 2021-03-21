@@ -271,7 +271,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                      Numeric_const c' -> (case c' of
                                                             Ras_Integer_const c_i -> Ras_Integer
                                                             Ras_Real_const c_r -> Ras_Real )
-                                     Record_const _ -> assert False Ras_Unknown_type
+                                     Record_const _ -> Ras_Unknown_type
                                      _ -> Ras_Unknown_type
                                   )
     Mediate_code_raw_Var var -> var_type var
@@ -554,7 +554,7 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                        ((row0', col0'), _):((row'', col''), SEMICOL):ts'' -> decl_fields acc' symtbl' (((row'', col''), SEMICOL):ts'')
                                                                        ((row0', col0'), _):((row'', col''), _):ts'' -> (acc', symtbl', tokens', Nothing)
                                                                        ((row0', col0'), _):ts'' -> (acc', symtbl', tokens', Nothing)
-                                                                       _ -> assert False (acc', symtbl', tokens', Nothing) )
+                                                                       _ -> (acc', symtbl', tokens', Nothing) )
                                                          _ -> (acc', symtbl', tokens', err)
                                                 )
                    ((row', col'), _):ts' -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error ((row', col'), Illformed_Declarement))])
@@ -582,7 +582,7 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                (symtbl'', Just err) -> (r_ident , symtbl'', tokens'', Just [(Par_error ((row', col'), err))])
                                          ((row0', col0'), _):((row', col'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row', col'), Illformed_Declarement))])
                                          ((row0', col0'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row0', col0'), Illformed_Declarement))])
-                                         _ -> assert False (r_ident , symtbl', tokens', Nothing)
+                                         _ -> (r_ident , symtbl', tokens', Nothing)
                                       )
                                     (fields, symtbl', tokens', err) -> (r_ident, symtbl', tokens', err)
                                  )
@@ -625,7 +625,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                   case vars of
                     [] -> (symtbl, [], errs)
                     (v@(Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}))):vs ->
-                      let (symtbl', r) = sym_regist False symtbl Cat_Sym_decl (Sym_var (assert (True ) v_attr)) v
+                      let (symtbl', r) = sym_regist False symtbl Cat_Sym_decl (Sym_var v_attr) v
                       in
                         case r of
                           Nothing -> (case (def_and_reg symtbl' (vs, errs)) of
