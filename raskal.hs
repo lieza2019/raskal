@@ -3,6 +3,7 @@
 
 import Control.Exception
 import Data.Char
+import Debug.Trace
 
 
 data Ras_Error =
@@ -129,6 +130,7 @@ data Token_codes =
 
 
 lex_main lexicon (row, col) src =
+  trace "in lex_main" (
   let coding tk_buf cand (row, col) src =
         let elim c cand' =
               case cand' of
@@ -203,9 +205,11 @@ lex_main lexicon (row, col) src =
                                                [] -> (NUM_CONST (Ras_Integer_const acc), (row, col), [])
                                                (c':cs') | (isDigit c') -> (par_num_const ((acc * 10) + ((ord c') - (ord '0'))) (row, col + 1) cs')
                                                         | otherwise -> (NUM_CONST (Ras_Integer_const acc), (row, col), src)
-                                                                     
+  )
+
 
 par_real_const tk_past tokens =
+  trace "in par_real_const" (
   let is_valid tk = case tk of
                       (_, PHONY) -> []
                       _ -> [tk]
@@ -222,6 +226,7 @@ par_real_const tk_past tokens =
            _ -> (is_valid tk_past) ++  (((r,c), DOT):[t']) ++ (par_real_const ((-1, -1), PHONY) ts')
         )
       (t:ts) -> (is_valid tk_past) ++ (par_real_const t ts)
+  )
 
 
 data Mediate_code_mnemonic =
@@ -251,6 +256,7 @@ data Mediate_code_fragment_raw =
 
 
 is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
+  trace "in is_subtype" (
   case ty2 of
     Ras_Top_type -> True
     Ras_Boolean -> (ty1 == Ras_Boolean) || (ty1 == Ras_Bottom_type)
@@ -260,9 +266,10 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
     Ras_Char -> (ty1 == Ras_Char) || (ty1 == Ras_Bottom_type)
     Ras_Bottom_type -> (ty1 == Ras_Bottom_type)
     _ -> False
-
+  )
 
 tyinf expr = {- obtaining the type of expr, with type inference. -}
+  trace "in tyinf" (
   case expr of
     Mediate_code_raw_Literal c -> (case c of
                                      Boolean_const c' -> Ras_Boolean
@@ -276,9 +283,11 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                   )
     Mediate_code_raw_Var var -> var_type var
     _ -> Ras_Unknown_type
+  )
 
 
 typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, by type inference. -}
+  trace "in typecheck" (
   case expr of
     {- If e1 : T1, e2 : T2, and T2 <: T1, then (e1:T1 := e2:T2) : T1. -}
     Mediate_code_raw_Bin {mnemonic = m}
@@ -299,6 +308,7 @@ typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, b
                             _ -> (expr, Just [(Par_error ((row, col), Compiler_internal_error))])
       | otherwise -> (expr, Nothing)
     _ -> (expr, Nothing)
+  )
 
 
 data Sym_category =
@@ -347,22 +357,27 @@ data Symtbl =
 
 
 sym_categorize symtbl cat =
+  trace "in sym_categorize" (
   case cat of
     Cat_Sym_typedef -> sym_typedef symtbl
     Cat_Sym_func -> sym_func symtbl
     Cat_Sym_record -> sym_record symtbl
     Cat_Sym_decl -> sym_decl symtbl
+  )
 
 
 sym_update symtbl cat tbl =
+  trace "in sym_update" (
   case cat of
     Cat_Sym_typedef -> symtbl{sym_typedef = tbl}
     Cat_Sym_func -> symtbl{sym_func = tbl}
     Cat_Sym_record -> symtbl{sym_record = tbl}
     Cat_Sym_decl -> symtbl{sym_decl = tbl}
+  )
 
 
 sym_search symtbl cat ident =
+  trace "in sym_search" (
   let walk syms ident =
         case syms of
           Sym_empty -> Nothing
@@ -378,9 +393,11 @@ sym_search symtbl cat ident =
              Just (found, syms') -> Just ((sym_attrib found), sym_update symtbl cat (Scope_add (lv, anon_idents, syms') sym_tbl'))
              Nothing -> sym_search (sym_update symtbl cat sym_tbl') cat ident
           )
+  )
 
 
 sym_lookup_var symtbl cat ident =
+  trace "in sym_lookup_var" (
   let trying = sym_search symtbl cat ident
   in
     case trying of
@@ -388,12 +405,17 @@ sym_lookup_var symtbl cat ident =
       Just (attr, remainders) -> (case (attr_decl attr) of
                                     Attrib_Var av -> Just (av, attr)
                                     _ -> sym_lookup_var remainders cat ident )
+  )
+
 
 sym_lookup_var_decl symtbl ident =
+  trace "in sym_lookup_var_decl" (
   sym_lookup_var symtbl Cat_Sym_decl ident
+  )
 
 
 sym_lookup_rec symtbl cat ident =
+  trace "in sym_lookup_rec" (
   let trying = sym_search symtbl cat ident
   in
     case trying of
@@ -401,12 +423,17 @@ sym_lookup_rec symtbl cat ident =
       Just (attr, remainders) -> (case (attr_decl attr) of
                                     Attrib_Rec (_, ar) -> Just (ar, attr)
                                     _ -> sym_lookup_rec remainders cat ident )
+  )
+
 
 sym_lookup_rec_decl symtbl ident =
+  trace "in sym_lookup_rec_decl" (
   sym_lookup_rec symtbl Cat_Sym_decl ident
+  )
 
 
 sym_lookup_typedef symtbl cat ident =
+  trace "in sym_lookup_typedef" (
   let trying = sym_search symtbl cat ident
   in
     case trying of
@@ -414,12 +441,17 @@ sym_lookup_typedef symtbl cat ident =
       Just (attr, remainders) -> (case (attr_decl attr) of
                                     Attrib_Typedef at -> Just (at, attr)
                                     _ -> sym_lookup_typedef remainders cat ident )
+  )
+
 
 sym_lookup_typedef_decl symtbl ident =
+  trace "in sym_lookup_typedef_decl" (
   sym_lookup_typedef symtbl Cat_Sym_decl ident
+  )
 
 
 walk_on_scope sym_cluster (kind, tgt_id) =
+  trace "in walk_on_scope" (
   let cmp_kind (Sym_entry {sym_attrib = attr}) =
         let attr_type = attr_decl attr
         in
@@ -435,9 +467,13 @@ walk_on_scope sym_cluster (kind, tgt_id) =
       Sym_empty -> Nothing
       Sym_add sym sym_cluster' -> if ((cmp_kind sym) && ((sym_ident sym) == tgt_id)) then Just sym
                                   else walk_on_scope sym_cluster' (kind, tgt_id)
+  )
+
 
 sym_regist ovwt symtbl cat entity fragment =
+  trace "in sym_regist" (
   let reg_sym sym_tbl ident sym =
+        trace "in reg_sym @sym_regist" (
         case sym_tbl of
           Scope_empty ->
             ((Scope_add (0, Symtbl_anon_ident {sym_anon_var = 1, sym_anon_record = 1}, (Sym_add sym Sym_empty)) Scope_empty), Nothing)
@@ -450,6 +486,7 @@ sym_regist ovwt symtbl cat entity fragment =
                                  Nothing -> ((Scope_add (lv, anon_ident_crnt, (Sym_add sym syms)) sym_tbl'), Nothing)
                               )
             )
+        )
   in
     let sym_tbl' =
           let sym_tbl = sym_categorize symtbl cat
@@ -462,9 +499,11 @@ sym_regist ovwt symtbl cat entity fragment =
     in
       case sym_tbl' of
         (tbl', err) -> ((sym_update symtbl cat tbl'), err)
+  )
 
 
 enter_scope symtbl cat =
+  trace "in enter_scope" (
   let sym_tbl = sym_categorize symtbl cat
   in
     let sym_tbl' = case sym_tbl of
@@ -472,9 +511,11 @@ enter_scope symtbl cat =
                      Scope_add (lv, sym_anon_ident, _) _ -> Scope_add (lv + 1, sym_anon_ident, Sym_empty) sym_tbl
     in
       sym_update symtbl cat sym_tbl'
+  )
 
 
 sym_anonid_var symtbl cat pref suff sep =
+  trace "in sym_anonid_var" (
   let d2s_var m = "var_" ++ ((pref ++ sep) ++ (show m) ++ (sep ++ suff))
       sym_tbl = sym_categorize symtbl cat
   in
@@ -488,9 +529,11 @@ sym_anonid_var symtbl cat pref suff sep =
       in
         case r of
           (anonid, tbl') -> (anonid ++ suff, sym_update symtbl cat tbl')
+  )
 
 
 sym_anonid_rec symtbl cat pref suff sep =
+  trace "in sym_anonid_rec" (
   let d2s_rec m = "rec_" ++ ((pref ++ sep) ++ (show m) ++ (sep ++ suff))
       sym_tbl = sym_categorize symtbl cat
   in
@@ -504,9 +547,11 @@ sym_anonid_rec symtbl cat pref suff sep =
       in
         case r of
           (anonid, tbl') -> (anonid, sym_update symtbl cat tbl')
+  )
 
 
 leave_scope symtbl cat =
+  trace "in leave_scope" (
   let sym_tbl = sym_categorize symtbl cat
   in
     let sym_tbl' = case sym_tbl of
@@ -514,9 +559,11 @@ leave_scope symtbl cat =
                      Scope_add sco sym_tbl' -> sym_tbl'
     in
       sym_update symtbl cat sym_tbl'
+  )
 
 
 par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
+  trace "in par_record" (
   let decl_fields acc symtbl tokens0@(((row0, col0), _):tokens) =
         let decl_type symtbl tokens0@(((row0, col0), _):tokens) =
               case tokens of
@@ -588,9 +635,11 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                  )
         ((row, col), _):ts -> (r_ident, symtbl', tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
         _ -> (r_ident, symtbl', tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
+  )
 
 
 par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
+  trace "in par_init_on_decl" (
   case vars of
     [] -> (symtbl, [], tokens0, Nothing)
     (v@(Mediate_code_raw_Var v_attr)):vs ->
@@ -692,9 +741,11 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                          _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), tokens0) ) of
                    ((symtbl', vars', err), tokens') -> (symtbl', vars', tokens', err)
     _ -> (symtbl, [], tokens0, Nothing)
+  )
 
 
 par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens) =
+  trace "in par_record_const" (
   case fields of
     [] -> (case tokens of
              (_, RBRA):ts -> (symtbl, acc, ts, Nothing)
@@ -766,9 +817,10 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                           ((row, col), _):ts -> (symtbl, (acc ++ (padding (-1, -1) fields)), tokens, Just [Par_error ((row, col), Illformed_Declarement)])
                           _ -> (symtbl, (acc ++ (padding (-1, -1) fields)), tokens0, Just [Par_error ((row0, col0), Illformed_Declarement)])
                        )
-
+  )
 
 par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
+  trace "in par_var" (
   let tychk_and_reg symtbl var_ty vars tokens0@(((row0, col0), _):tokens) =
         let def_and_reg symtbl vars =
               case vars of
@@ -845,12 +897,15 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                  )
                        _ -> tychk_and_reg symtbl Ras_Bottom_type vars tokens
               )
+  )
+
 
 par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
 
 
 par_asgn symtbl ((row, col), ident) tokens =
   -- (symtbl, [], tokens)
+  trace "in par_asgn" (
   case (sym_lookup_var symtbl Cat_Sym_decl ident) of
     Just (sig, attr) ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = Mediate_code_fragment_raw_None}
@@ -890,9 +945,10 @@ par_asgn symtbl ((row, col), ident) tokens =
                                          (expr_r, symtbl', ts', r) -> ([fr_asgn{operand_1 = expr_r}], symtbl', ts', r) )
            _ -> ([fr_asgn], symtbl, tokens, Just [(Par_error ((row, col), Expr_no_asgn))])
         )
-
+  )
 
 ras_parse forest symtbl tokens error =
+  trace "in ras_parse" (
   let panicked ts =
         case ts of
           [] -> []
@@ -917,7 +973,7 @@ ras_parse forest symtbl tokens error =
                                                         ras_parse forest' symtbl' tokens'' error
                                       _ -> (forest', symtbl', [], error) )
                         Just _ -> ras_parse forest' symtbl' (panicked tokens') (append_error error err)
-
+  )
 
 main src =
   let lexicon = [("and", AND), ("array", ARRAY),
@@ -957,5 +1013,6 @@ main src =
                               (t:ts) -> t:(lex_purge ts)
 
 
--- main "var a :: record { alpha : Integer; beta : String }"
--- main "var a :: record { alpha : Integer } := { 3 }"
+-- main "var a :: record { alpha : integer; beta : string }"
+-- main "var a :: record { alpha : integer } := { 3 }"
+
