@@ -36,8 +36,11 @@ append_error err1 err2 =
 
 
 data Ras_Record_field =
-  Ras_Record_field {memb_ident :: String, memb_type :: Ras_Types}
+  Ras_Record_field {memb_coord :: (Int, Int), memb_ident :: String, memb_type :: Ras_Types}
   deriving (Eq, Ord, Show)
+
+
+type Ras_Record_attr = ((Int, Int), String, [Ras_Record_field])
 
 data Ras_Types =
   Ras_Top_type
@@ -46,12 +49,14 @@ data Ras_Types =
   | Ras_Real
   | Ras_String
   | Ras_Char
-  | Ras_Record (String, [Ras_Record_field])
+  -- | Ras_Record ((Int, Int), String, [Ras_Record_field])
+  | Ras_Record Ras_Record_attr
   | Ras_Typedef String
   | Ras_Bottom_type
   | Ras_Unknown_type
   | Ras_Illformed_type
   deriving (Eq, Ord, Show)
+
 
 data Boolean_const =
   Ras_Boolean_const Bool
@@ -321,12 +326,14 @@ data Sym_category =
 
 data Sym_entity =
   Sym_var Mediate_var_attr
-  | Sym_record (String, [Ras_Record_field])
+  -- | Sym_record (String, [Ras_Record_field])
+  | Sym_record Ras_Record_attr
     deriving (Eq, Ord, Show)
 
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
-  | Attrib_Rec (String, [Ras_Record_field])
+  -- | Attrib_Rec (String, [Ras_Record_field])
+  | Attrib_Rec Ras_Record_attr
   | Attrib_Typedef Ras_Types
   deriving (Eq, Ord, Show)
 
@@ -335,7 +342,7 @@ data Sym_attrib =
   deriving (Eq, Ord, Show)
 
 data Symtbl_node =
-  Sym_entry {sym_ident :: String, sym_attrib :: Sym_attrib}
+  Sym_entry {sym_ident :: String, sym_body :: Sym_attrib}
   deriving (Eq, Ord, Show)
 
 data Symtbl_cluster =
@@ -391,7 +398,7 @@ sym_search symtbl cat ident =
         Scope_empty -> Nothing
         Scope_add (lv, anon_idents, syms) sym_tbl' ->
           (case (walk syms ident) of
-             Just (found, syms') -> Just ((sym_attrib found), sym_update symtbl cat (Scope_add (lv, anon_idents, syms') sym_tbl'))
+             Just (found, syms') -> Just ((sym_body found), sym_update symtbl cat (Scope_add (lv, anon_idents, syms') sym_tbl'))
              Nothing -> sym_search (sym_update symtbl cat sym_tbl') cat ident
           )
   )
@@ -422,7 +429,8 @@ sym_lookup_rec symtbl cat ident =
     case trying of
       Nothing -> Nothing
       Just (attr, remainders) -> (case (attr_decl attr) of
-                                    Attrib_Rec (_, ar) -> Just (ar, attr)
+                                    --Attrib_Rec (_, ar) -> Just (ar, attr)
+                                    Attrib_Rec ar -> Just (ar, attr)
                                     _ -> sym_lookup_rec remainders cat ident )
   )
 
@@ -453,7 +461,7 @@ sym_lookup_typedef_decl symtbl ident =
 
 walk_on_scope sym_cluster (kind, tgt_id) =
   trace "in walk_on_scope" (
-  let cmp_kind (Sym_entry {sym_attrib = attr}) =
+  let cmp_kind (Sym_entry {sym_body = attr}) =
         let attr_type = attr_decl attr
         in
           case kind of
@@ -492,9 +500,11 @@ sym_regist ovwt symtbl cat entity fragment =
           in
             case entity of
               Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
-                reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}})
-              Sym_record (rec_id, fields) ->
-                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_attrib = Sym_attrib {attr_decl = Attrib_Rec (rec_id, fields), attr_fragment = fragment}})
+                reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}})
+              {- Sym_record (rec_id, fields) ->
+                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_decl = Attrib_Rec (rec_id, fields), attr_fragment = fragment}}) -}
+              Sym_record (pos, rec_id, fields) ->
+                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_decl = Attrib_Rec (pos, rec_id, fields), attr_fragment = fragment}})
     in
       case sym_tbl' of
         (tbl', err) -> ((sym_update symtbl cat tbl'), err)
@@ -561,7 +571,7 @@ leave_scope symtbl cat =
   )
 
 
-par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
+par_record symtbl qual@(Ras_Record ((r_decl, c_decl), _, _)) tokens0@(((row0, col0), tk0):tokens) =
   trace "in par_record" (
   let decl_fields acc symtbl tokens0@(((row0, col0), _):tokens) =
         let decl_type symtbl tokens0@(((row0, col0), _):tokens) =
@@ -572,14 +582,17 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                 (_, STRING):ts -> (Ras_String, symtbl, tokens, Nothing)
                 (_, CHAR):ts -> (Ras_Char, symtbl, tokens, Nothing)
                 ((row, col), RECORD):ts ->
-                  (case (par_record (enter_scope symtbl Cat_Sym_record) tokens) of
-                      (r_ident, symtbl', tokens', Nothing) -> (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
-                                                                 Just (sig, _) -> (Ras_Record (r_ident, sig), (leave_scope symtbl' Cat_Sym_record), tokens', Nothing)
-                                                                 Nothing -> (Ras_Unknown_type, (leave_scope symtbl' Cat_Sym_record), tokens',
-                                                                             Just [(Par_error ((row, col), Compiler_internal_error))])
-                                                              )
-                      (_, symtbl', tokens', err) -> (Ras_Illformed_type, (leave_scope symtbl' Cat_Sym_record), tokens', err)
-                  )
+                  let qual' = Ras_Record ((row, col), "", [])
+                  in
+                    (case (par_record (enter_scope symtbl Cat_Sym_record) qual' tokens) of
+                       (r_ident, symtbl', tokens', Nothing) -> (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
+                                                                  Just (sig, _) -> (Ras_Record sig, (leave_scope symtbl' Cat_Sym_record), tokens', Nothing)
+                                                                  --Just (sig, _) -> (Ras_Record ((row, col), r_ident, sig), (leave_scope symtbl' Cat_Sym_record), tokens', Nothing)
+                                                                  Nothing -> (Ras_Unknown_type, (leave_scope symtbl' Cat_Sym_record), tokens',
+                                                                              Just [(Par_error ((row, col), Compiler_internal_error))])
+                                                               )
+                       (_, symtbl', tokens', err) -> (Ras_Illformed_type, (leave_scope symtbl' Cat_Sym_record), tokens', err)
+                    )
                 {-((row, col), IDENT t_ident):ts -> (case (sym_lookup_typedef symtbl t_ident) of
                                                      Just (sig, attr) -> (Ras_DefType sig, symtbl, ts, Nothing)
                                                      Nothing -> (Ras_Unknown_type, symtbl, ts, Just [(Par_error ((row, col), Illformed_Declarement))]) ) -}
@@ -588,7 +601,7 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
         in
           case tokens of
             ((row, col), IDENT f_ident):ts ->
-              let field = Ras_Record_field {memb_ident = f_ident, memb_type = Ras_Unknown_type}
+              let field = Ras_Record_field {memb_coord = (row, col), memb_ident = f_ident, memb_type = Ras_Unknown_type}
               in
                 (case ts of
                    ((row', col'), COLON):ts' -> (case (decl_type symtbl ts) of
@@ -619,11 +632,11 @@ par_record symtbl tokens0@(((row0, col0), tk0):tokens) =
                                       (case tokens' of
                                          ((row0', col0'), _):((row', col'), RBRA):ts' ->
                                            let tokens'' = ((row', col'), RBRA):ts'
-                                               r_fragment = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row, col), var_ident = r_ident,
-                                                                                                    var_type = Ras_Record (r_ident, fields),
+                                               r_fragment = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (-1, -1), var_ident = "UNKNOWN",
+                                                                                                    var_type = Ras_Record ((r_decl, c_decl),r_ident, fields),
                                                                                                     var_attr = Var_attr_fields []})
                                            in
-                                             case (sym_regist False symtbl' Cat_Sym_record (Sym_record (r_ident, fields)) r_fragment) of
+                                             case (sym_regist False symtbl' Cat_Sym_record (Sym_record ((r_decl, c_decl), r_ident, fields) )r_fragment) of
                                                (symtbl'', Nothing) -> (r_ident , symtbl'', tokens'', Nothing)
                                                (symtbl'', Just err) -> (r_ident , symtbl'', tokens'', Just [(Par_error ((row', col'), err))])
                                          ((row0', col0'), _):((row', col'), _):ts' -> (r_ident , symtbl', tokens', Just [(Par_error ((row', col'), Illformed_Declarement))])
@@ -643,7 +656,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
     [] -> (symtbl, [], tokens0, Nothing)
     (v@(Mediate_code_raw_Var v_attr)):vs ->
       case (var_type v_attr) of
-        Ras_Record (r_ident, fields) ->
+        ty_r@(Ras_Record (_, r_ident, fields)) ->
           let (symtbl', vars', tokens', err) = (case tokens of
                                                   ((row, col), DEF):ts ->
                                                     (case ts of
@@ -655,7 +668,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                                                                    let init ini_fields var =
                                                                          case var of
                                                                            Mediate_code_raw_Var v_attr@(Mediate_var_attr {var_type = ty}) ->
-                                                                             let v_attr' = (assert (ty == Ras_Record (r_ident, fields)) v_attr){var_attr = Var_attr_fields ini_fields}
+                                                                             let v_attr' = (assert (ty == ty_r) v_attr){var_attr = Var_attr_fields ini_fields}
                                                                              in
                                                                                Mediate_code_raw_Var v_attr'
                                                                            _ -> assert False var
@@ -753,7 +766,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
           )
     f:fs ->
       (case (memb_type f) of
-         Ras_Record (r_nested_ident, r_nested_fields) ->
+         Ras_Record (_, r_nested_ident, r_nested_fields) ->
            (case tokens of
               ((row, col), LBRA):ts ->
                 (case (par_record_const [] symtbl (r_nested_ident, r_nested_fields) tokens) of
@@ -786,7 +799,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                     case omits of
                       [] -> []
                       f:fs -> (case (memb_type f) of
-                                 Ras_Record (r_ident, r_fields) ->
+                                 Ras_Record (_, r_ident, r_fields) ->
                                    Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row_t, col_t), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                            var_attr = Var_attr_fields (padding (row_t, col_t) r_fields)})
                                  {- Ras_Typedef ty_ident ->
@@ -869,28 +882,30 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                       (_, STRING) -> tychk_and_reg symtbl Ras_String (reveal_scl Ras_String vars) ts'
                                                       (_, CHAR) -> tychk_and_reg symtbl Ras_Char (reveal_scl Ras_Char vars) ts'
                                                       ((row'', col''), RECORD) ->
-                                                        (case (par_record symtbl ts') of
-                                                           (r_ident, symtbl', us', err) ->
-                                                             (case err of
-                                                                Nothing ->                                                                  
-                                                                  (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
-                                                                     Just (r_fields, r_attr) ->
-                                                                       let (r_ident', symtbl'') = sym_anonid_rec symtbl' Cat_Sym_decl "" "" ""
-                                                                       in
-                                                                         --trace ("IN par_var" ++ " " ++ ("(" ++ (show symtbl'') ++ ")")) (
-                                                                         case (sym_regist False symtbl'' Cat_Sym_decl (Sym_record (r_ident', r_fields)) (attr_fragment r_attr)) of
-                                                                           (symtbl_reg, err') -> (case err' of
-                                                                                                    Nothing -> (case (par_init_on_decl symtbl_reg True (reveal_rec symtbl_reg r_ident' vars) us') of
-                                                                                                                  (symtbl_reg', vars', tokens', e) -> (vars', symtbl_reg', tokens', e) )
-                                                                                                    _ -> ((reveal_rec symtbl_reg r_ident' vars), symtbl_reg, us',
-                                                                                                          Just [(Par_error ((row'', col''), Compiler_internal_error))])
-                                                                                                 )
-                                                                         --)
-                                                                     Nothing -> ((reveal_rec symtbl' r_ident vars), symtbl', us', Just [(Par_error ((row'', col''), Compiler_internal_error))])
-                                                                  )
-                                                                _ -> ((reveal_rec symtbl' r_ident vars), symtbl', us', err)
-                                                             )
-                                                        )
+                                                        let qual = Ras_Record ((row'', col''), "", [])
+                                                        in
+                                                          (case (par_record symtbl qual ts') of
+                                                             (r_ident, symtbl', us', err) ->
+                                                               (case err of
+                                                                  Nothing ->
+                                                                    (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
+                                                                       Just (r_fields, r_attr) ->
+                                                                         let (r_ident', symtbl'') = sym_anonid_rec symtbl' Cat_Sym_decl "" "" ""
+                                                                         in
+                                                                           --trace ("IN par_var" ++ " " ++ ("(" ++ (show symtbl'') ++ ")")) (
+                                                                           case (sym_regist False symtbl'' Cat_Sym_decl (Sym_record (r_ident', r_fields)) (attr_fragment r_attr)) of
+                                                                             (symtbl_reg, err') -> (case err' of
+                                                                                                      Nothing -> (case (par_init_on_decl symtbl_reg True (reveal_rec symtbl_reg r_ident' vars) us') of
+                                                                                                                    (symtbl_reg', vars', tokens', e) -> (vars', symtbl_reg', tokens', e) )
+                                                                                                      _ -> ((reveal_rec symtbl_reg r_ident' vars), symtbl_reg, us',
+                                                                                                            Just [(Par_error ((row'', col''), Compiler_internal_error))])
+                                                                                                   )
+                                                                           --)
+                                                                       Nothing -> ((reveal_rec symtbl' r_ident vars), symtbl', us', Just [(Par_error ((row'', col''), Compiler_internal_error))])
+                                                                    )
+                                                                  _ -> ((reveal_rec symtbl' r_ident vars), symtbl', us', err)
+                                                               )
+                                                          )
                                                       ((row'', col''), _) -> (acc, symtbl, ts, Just [(Par_error ((row'', col''), Illformed_Declarement))])
                                                    )
                                          _ -> (vars, symtbl, ts, Just [(Par_error ((row', col'), Illformed_Declarement))])
