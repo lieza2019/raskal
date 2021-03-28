@@ -144,7 +144,7 @@ lex_main lexicon (row, col) src =
           in
             case src of
               [] -> (tk_buf, lookup "" cand, (row, col), [])
-              (c:cs) | delimiter c -> (tk_buf, lookup "" cand, (row, col + 1), src)
+              (c:cs) | delimiter c -> (tk_buf, lookup "" cand, (row, col), src)
                      | otherwise -> coding (tk_buf ++ [c]) (elim c cand) (row, col + 1) cs
   in
     case src of
@@ -243,6 +243,7 @@ data Mediate_code_mnemonic =
 
 data Mediate_var_attr =
   Mediate_var_attr {var_coord :: (Int, Int), var_ident :: String, var_type :: Ras_Types, var_attr :: Mediate_var_attr}
+  -- | Var_attr_const ((Int, Int), Ras_Const)
   | Var_attr_const Ras_Const
   | Var_attr_fields [Mediate_code_fragment_raw]
   | Var_attr_typedef Mediate_code_fragment_raw
@@ -1009,7 +1010,8 @@ main src =
       --return (ras_parse [] Scope_empty tokens' Nothing)
       return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
               in
-                ras_parse [] symtbl tokens' Nothing)
+                (tokens', ras_parse [] symtbl tokens' Nothing)
+             )
         where
           lex_purge tokens = case tokens of
                                [] -> []
@@ -1019,3 +1021,5 @@ main src =
 
 -- main "var a :: record { alpha : integer; beta : string }"
 -- main "var a :: record { alpha : integer } := { 3 }"
+
+-- main "var a :: integer := 2"
