@@ -243,8 +243,7 @@ data Mediate_code_mnemonic =
 
 data Mediate_var_attr =
   Mediate_var_attr {var_coord :: (Int, Int), var_ident :: String, var_type :: Ras_Types, var_attr :: Mediate_var_attr}
-  -- | Var_attr_const ((Int, Int), Ras_Const)
-  | Var_attr_const Ras_Const
+  | Var_attr_const ((Int, Int), Ras_Const)
   | Var_attr_fields [Mediate_code_fragment_raw]
   | Var_attr_typedef Mediate_code_fragment_raw
   deriving (Eq, Ord, Show)
@@ -693,10 +692,10 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                    case val of
                      Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
                        (case v_attr of
-                          Var_attr_const c -> let lvalue = val
-                                                  rvalue = Mediate_code_raw_Literal c
-                                              in
-                                                Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+                          Var_attr_const (_, c) -> let lvalue = val
+                                                       rvalue = Mediate_code_raw_Literal c
+                                                   in
+                                                     Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
                           _ -> assert False val
                        )
                      _ -> val
@@ -730,7 +729,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                    else
                      (symtbl, vars, errs)
              in
-               let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_coord = (row_c, col_c), var_attr = Var_attr_const c}))
+               let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const ((row_c, col_c), c)}))
                in
                  case (case tokens of
                          ((row, col), (BOOL_CONST b)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Boolean_const b))) vars)), tokens)
@@ -772,7 +771,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
            )
          {- Ras_Typedef ty_ident -> -}
          _ -> let v_memb = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (-1, -1), var_ident = (memb_ident f), var_type = (memb_type f),
-                                                                   var_attr = (Var_attr_const Ras_Const_not_defined)})
+                                                                   var_attr = (Var_attr_const ((-1, -1), Ras_Const_not_defined))})
               in
                 case (par_init_on_decl symtbl False [v_memb] tokens0) of
                   (symtbl', f', tokens', err) -> let acc' = acc ++ f'
@@ -800,7 +799,7 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                                       Nothing -> assert False []
                                    ) -}
                                  _ -> Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row_t, col_t), var_ident = (memb_ident f), var_type = (memb_type f),
-                                                                              var_attr = Var_attr_const Ras_Const_not_defined})
+                                                                              var_attr = Var_attr_const ((-1, -1), Ras_Const_not_defined)})
                               ) : (padding (row_t, col_t) fs)
               in
                 case fields of
@@ -847,7 +846,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                  ((row, col), IDENT v_ident) ->
                    let vars = acc ++ [Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row, col), var_ident = v_ident,
                                                                               var_type = Ras_Bottom_type,
-                                                                              var_attr = Var_attr_const Ras_Const_not_defined})]
+                                                                              var_attr = Var_attr_const ((-1, -1), Ras_Const_not_defined)})]
                    in
                      case ts of
                        t':ts' -> (case t' of
@@ -861,7 +860,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                       _ -> []
                                                        in                                                        
                                                          map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record (r_ident, fields),
-                                                                                                                   var_attr = Var_attr_const Ras_Const_not_defined})) vars
+                                                                                                                   var_attr = Var_attr_const ((-1, -1), Ras_Const_not_defined)})) vars
                                                  in
                                                    (case u of
                                                       (_, BOOLEAN) -> tychk_and_reg symtbl Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
