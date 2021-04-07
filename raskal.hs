@@ -47,10 +47,11 @@ append_error err1 err2 =
                    Just es2 -> Just (es1 ++ es2) )
 
 
+type Ras_typedef_attr = ((Int, Int), String, Ras_Types)
+
 data Ras_Record_field =
   Ras_Record_field {memb_coord :: (Int, Int), memb_ident :: String, memb_type :: Ras_Types}
   deriving (Eq, Ord, Show)
-
 
 type Ras_Record_attr = ((Int, Int), String, [Ras_Record_field])
 
@@ -62,7 +63,7 @@ data Ras_Types =
   | Ras_String
   | Ras_Char
   | Ras_Record Ras_Record_attr
-  | Ras_Typedef String
+  | Ras_Typedef Ras_typedef_attr
   | Ras_Bottom_type
   | Ras_Unknown_type
   | Ras_Illformed_type
@@ -254,7 +255,7 @@ data Mediate_var_attr =
   Mediate_var_attr {var_coord :: (Int, Int), var_ident :: String, var_type :: Ras_Types, var_attr :: Mediate_var_attr}
   | Var_attr_const ((Int, Int), Ras_Const)
   | Var_attr_fields [Mediate_code_fragment_raw]
-  | Var_attr_typedef Mediate_code_fragment_raw
+  | Var_attr_none
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
@@ -262,6 +263,7 @@ data Mediate_code_fragment_raw =
   | Mediate_code_raw_Bin {mnemonic :: Mediate_code_mnemonic, operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Literal Ras_Const
+  | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   deriving (Eq, Ord, Show)
 
 
@@ -329,7 +331,8 @@ data Sym_category =
   deriving (Eq, Ord, Show)
 
 data Sym_entity =
-  Sym_var Mediate_var_attr
+  Sym_typedef Ras_typedef_attr
+  | Sym_var Mediate_var_attr
   | Sym_record Ras_Record_attr
     deriving (Eq, Ord, Show)
 
@@ -868,7 +871,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                          map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record r_attr})) vars
                                                  in
                                                    (case u of
-                                                      (_, BOOLEAN) -> tychk_and_reg symtbl Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
+                                                      (_, BOOLEAN)-> tychk_and_reg symtbl Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
                                                       (_, INTEGER) -> tychk_and_reg symtbl Ras_Integer (reveal_scl Ras_Integer vars) ts'
                                                       (_, REAL) -> tychk_and_reg symtbl Ras_Real (reveal_scl Ras_Real vars) ts'
                                                       (_, STRING) -> tychk_and_reg symtbl Ras_String (reveal_scl Ras_String vars) ts'
@@ -946,7 +949,7 @@ par_asgn symtbl ((row, col), ident) tokens =
            _ -> ([fr_asgn], symtbl, tokens, Just [(Par_error ((row, col), Expr_no_asgn))])
         )
   )
-
+  
 
 ras_parse forest symtbl tokens error =
   ras_trace "in ras_parse" (
@@ -961,6 +964,7 @@ ras_parse forest symtbl tokens error =
                 -- ((r, c), RECORD) -> 
                 ((r, c), VAR) -> go_on (par_var [] symtbl tokens)
                 ((r, c), IDENT v_ident) -> go_on (par_asgn symtbl ((r, c), v_ident) tokens)
+                --((r, c), TYPE) -> par_typedef symtbl tokens
                 _ -> ras_parse forest symtbl (panicked tokens) error
                 
                 where
@@ -1025,4 +1029,49 @@ main src =
 -- main "var a :: record { alpha : integer; beta : record { r1 : integer } }"
 -- main "var a :: record { alpha : integer; beta :: record { r1 :: integer; r2 :: string } }"
 -- main "var a :: integer := 2"
-?
+
+
+par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
+  let par_tydef symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
+        case tokens' of
+          ((row_i, col_i), IDENT t_ident):(ts0'@(((row_a, col_a), ASGN):ts')) ->
+            let tk2ty tk =
+                  case tk of
+                    (_, BOOLEAN) -> Just Ras_Boolean
+                    (_, INTEGER) -> Just Ras_Integer
+                    (_, REAL) -> Just Ras_Real
+                    (_, STRING) -> Just Ras_String
+                    (_, CHAR) -> Just Ras_Char
+                    _ -> Nothing
+            in
+              (case ts' of
+                 t':ts'' -> (case (tk2ty t') of
+                               Just ty -> let entity  = Sym_typedef ((row_i, col_i), t_ident, ty)
+                                          in
+                                            case (sym_regist False symtbl Cat_Sym_typedef entity (Mediate_code_raw_typedef {tydef_coord = (row0, col0),
+                                                                                                                            tydef_ident = t_ident, tydef_deftype = ty})
+                                                 ) of
+                                              (symtbl', err) -> (case err of
+                                                                   Nothing -> (case ts'' of
+                                                                                 (_, SEMICOL):((row'', col''), RBRA):token'' -> (symtbl', (((row'', col''), RBRA):token''), Nothing)
+                                                                                 ((row'', col''), RBRA):token'' -> (symtbl', (((row'', col''), RBRA):token''), Nothing)
+                                                                                 ((row'', col''), SEMICOL):tokens'' -> par_tydef symtbl' ts''
+                                                                                 _ -> (symtbl', ts',Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+                                                                              )
+                                                                   Just e -> (symtbl', ts', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+                                                                )
+                               Nothing -> (case t' of
+                                             ((row', col'), _) -> (symtbl, ts0', Just [(Par_error ((row', col'), Expr_no_asgn))]) )
+                            )
+                 _ -> (symtbl, ts0', Just [(Par_error ((row_a, col_a), Expr_no_asgn))])
+              )
+          ((row_i, col_i), IDENT t_ident):ts' -> (symtbl, tokens', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+          ((row_i, col_i), _):ts' -> (symtbl, tokens', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+          _ -> (symtbl, tokens', Just [(Par_error ((row0', col0'), Expr_no_asgn))])
+  in
+    case (assert (tk0 == TYPE) tokens) of
+      ((row_L, col_L), LBRA):ts -> (case ts of
+                                      ((row', col'), RBRA):ts' -> (symtbl, ts, Nothing)
+                                      ((row', col'), _):ts' -> par_tydef symtbl tokens
+                                   )
+      _ -> (symtbl, tokens0, Just [(Par_error ((row0, col0), Expr_no_asgn))])
