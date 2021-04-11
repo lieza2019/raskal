@@ -11,6 +11,11 @@ data Ras_Error =
   Illformed_Declarement
   | Tycon_mismatched
   | Symbol_redifinition
+  | Typedef_no_synon_name
+  | Typedef_no_synon_type
+  | Typedef_invalid_synon_type
+  | Typedef_redefinition
+  | Typedef_illformed_declarement
   | Expr_no_asgn
   | Expr_no_valid_lvalue
   | Expr_no_valid_rvalue
@@ -579,12 +584,14 @@ leave_scope symtbl cat =
 
 
 par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
-  let par_tydef symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
+  let par_tydef acc symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
         let fragment = Mediate_code_raw_typedef {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
+            acc' = acc ++ [fragment]
         in
           case tokens' of
             ((row_i, col_i), IDENT t_ident):(ts0'@(((row_a, col_a), ASGN):ts')) ->
               let fragment' = fragment{tydef_coord = (row_i, col_i), tydef_ident = t_ident}
+                  acc' = acc ++ [fragment']
                   tk2ty tk =
                     case tk of
                       (_, BOOLEAN) -> Just Ras_Boolean
@@ -598,34 +605,42 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                    t':ts'' -> (case (tk2ty t') of
                                  Just ty -> let entity  = Sym_typedef ((row_i, col_i), t_ident, ty)
                                                 fragment'' = fragment'{tydef_deftype = ty}
+                                                acc' = acc ++ [fragment'']
                                             in
                                               case (sym_regist False symtbl Cat_Sym_typedef entity fragment'') of
                                                 (symtbl', err) -> (case err of
                                                                      Nothing -> (case ts'' of
-                                                                                   (_, SEMICOL):((row'', col''), RBRA):token'' -> ([fragment''],symtbl', (((row'', col''), RBRA):token''), Nothing)
-                                                                                   ((row'', col''), RBRA):token'' -> ([fragment''], symtbl', (((row'', col''), RBRA):token''), Nothing)
-                                                                                   ((row'', col''), SEMICOL):tokens'' -> par_tydef symtbl' ts''
-                                                                                   _ -> ([fragment''], symtbl', ts',Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+                                                                                   (_, SEMICOL):((row'', col''), RBRA):token'' -> (acc' ,symtbl', (((row'', col''), RBRA):token''), Nothing)
+                                                                                   ((row'', col''), RBRA):token'' -> (acc', symtbl', (((row'', col''), RBRA):token''), Nothing)
+                                                                                   ((row'', col''), SEMICOL):tokens'' -> par_tydef acc' symtbl' ts''
+                                                                                   _ -> (acc', symtbl', ts',Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))])
                                                                                 )
-                                                                     Just e -> ([fragment''], symtbl', ts', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
+                                                                     Just e -> let e' = Par_error ((row_i, col_i), e)
+                                                                               in
+                                                                                 let es = (case e of
+                                                                                             Symbol_redifinition -> (Par_error ((row_i, col_i), Typedef_redefinition))
+                                                                                             _ -> ras_assert False (Par_error ((row_i, col_i), Compiler_internal_error))
+                                                                                          ) : [e']
+                                                                                 in
+                                                                                   (acc', symtbl', ts', Just es)
                                                                   )
                                  Nothing -> (case t' of
-                                               ((row', col'), _) -> ([fragment'], symtbl, ts0', Just [(Par_error ((row', col'), Expr_no_asgn))]) )
+                                               ((row', col'), _) -> (acc', symtbl, ts0', Just [(Par_error ((row', col'), Typedef_invalid_synon_type))]) )
                               )
-                   _ -> ([fragment'], symtbl, ts0', Just [(Par_error ((row_a, col_a), Expr_no_asgn))])
+                   _ -> (acc', symtbl, ts0', Just [(Par_error ((row_a, col_a), Typedef_no_synon_type))])
                 )
-            ((row_i, col_i), IDENT t_ident):ts' -> ([fragment], symtbl, tokens', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
-            ((row_i, col_i), _):ts' -> ([fragment], symtbl, tokens', Just [(Par_error ((row_i, col_i), Expr_no_asgn))])
-            _ -> ([fragment], symtbl, tokens', Just [(Par_error ((row0', col0'), Expr_no_asgn))])
+            ((row_i, col_i), IDENT t_ident):ts' -> (acc', symtbl, tokens', Just [(Par_error ((row_i, col_i), Typedef_no_synon_type))])
+            ((row_i, col_i), _):ts' -> (acc', symtbl, tokens', Just [(Par_error ((row_i, col_i), Typedef_no_synon_name))])
+            _ -> (acc', symtbl, tokens', Just [(Par_error ((row0', col0'), Typedef_illformed_declarement))])
   in
     let fragment = Mediate_code_raw_typedef {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
     in
       case (assert (tk0 == TYPE) tokens) of
         ((row_L, col_L), LBRA):ts -> (case ts of
                                         ((row', col'), RBRA):ts' -> ([fragment], symtbl, ts, Nothing)
-                                        ((row', col'), _):ts' -> par_tydef symtbl tokens
+                                        ((row', col'), _):ts' -> par_tydef [] symtbl tokens
                                      )
-        _ -> ([fragment], symtbl, tokens0, Just [(Par_error ((row0, col0), Expr_no_asgn))])
+        _ -> ([fragment], symtbl, tokens0, Just [(Par_error ((row0, col0), Typedef_illformed_declarement))])
 
 
 par_record symtbl qual@(Ras_Record ((r_decl, c_decl), _, _)) tokens0@(((row0, col0), tk0):tokens) =
