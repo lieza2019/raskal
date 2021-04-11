@@ -331,15 +331,15 @@ data Sym_category =
   deriving (Eq, Ord, Show)
 
 data Sym_entity =
-  Sym_typedef Ras_typedef_attr
-  | Sym_var Mediate_var_attr
+  Sym_var Mediate_var_attr
+  | Sym_typedef Ras_typedef_attr
   | Sym_record Ras_Record_attr
     deriving (Eq, Ord, Show)
 
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
   | Attrib_Rec Ras_Record_attr
-  | Attrib_Typedef Ras_Types
+  | Attrib_Typedef Ras_typedef_attr
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
@@ -415,9 +415,9 @@ sym_lookup_var symtbl cat ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (attr, remainders) -> (case (attr_decl attr) of
-                                    Attrib_Var av -> Just (av, attr)
-                                    _ -> sym_lookup_var remainders cat ident )
+      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
+                                          Attrib_Var av -> Just (av, whole_attr)
+                                          _ -> sym_lookup_var remainders cat ident )
   )
 
 
@@ -433,9 +433,9 @@ sym_lookup_rec symtbl cat ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (attr, remainders) -> (case (attr_decl attr) of
-                                    Attrib_Rec ar -> Just (ar, attr)
-                                    _ -> sym_lookup_rec remainders cat ident )
+      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
+                                          Attrib_Rec ar -> Just (ar, whole_attr)
+                                          _ -> sym_lookup_rec remainders cat ident )
   )
 
 
@@ -451,9 +451,9 @@ sym_lookup_typedef symtbl cat ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (attr, remainders) -> (case (attr_decl attr) of
-                                    Attrib_Typedef at -> Just (at, attr)
-                                    _ -> sym_lookup_typedef remainders cat ident )
+      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
+                                          Attrib_Typedef at -> Just (at, whole_attr)
+                                          _ -> sym_lookup_typedef remainders cat ident )
   )
 
 
@@ -472,6 +472,9 @@ walk_on_scope sym_cluster (kind, tgt_id) =
             Sym_var _ -> (case attr_type of
                             Attrib_Var _ -> True
                             _ -> False )
+            Sym_typedef _ -> (case attr_type of
+                                Attrib_Typedef _ -> True
+                                _ -> False )
             Sym_record _  -> (case attr_type of
                                 Attrib_Rec _ -> True
                                 _ -> False )
@@ -505,6 +508,8 @@ sym_regist ovwt symtbl cat entity fragment =
             case entity of
               Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
                 reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}})
+              Sym_typedef (pos, tydef_id, tydef_defty) ->
+                reg_sym sym_tbl tydef_id (Sym_entry {sym_ident = tydef_id, sym_body = Sym_attrib {attr_decl = Attrib_Typedef (pos, tydef_id, tydef_defty), attr_fragment = fragment}})
               Sym_record (pos, rec_id, fields) ->
                 reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_decl = Attrib_Rec (pos, rec_id, fields), attr_fragment = fragment}})
     in
@@ -579,7 +584,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
         in
           case tokens' of
             ((row_i, col_i), IDENT t_ident):(ts0'@(((row_a, col_a), ASGN):ts')) ->
-              let fragment' = fragment{tydef_ident = t_ident}
+              let fragment' = fragment{tydef_coord = (row_i, col_i), tydef_ident = t_ident}
                   tk2ty tk =
                     case tk of
                       (_, BOOLEAN) -> Just Ras_Boolean
@@ -594,7 +599,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                  Just ty -> let entity  = Sym_typedef ((row_i, col_i), t_ident, ty)
                                                 fragment'' = fragment'{tydef_deftype = ty}
                                             in
-                                              case (sym_regist False symtbl Cat_Sym_typedef entity fragment) of
+                                              case (sym_regist False symtbl Cat_Sym_typedef entity fragment'') of
                                                 (symtbl', err) -> (case err of
                                                                      Nothing -> (case ts'' of
                                                                                    (_, SEMICOL):((row'', col''), RBRA):token'' -> ([fragment''],symtbl', (((row'', col''), RBRA):token''), Nothing)
@@ -1079,4 +1084,4 @@ main src =
 -- main "var a :: record { alpha : integer; beta : record { r1 : integer } }"
 -- main "var a :: record { alpha : integer; beta :: record { r1 :: integer; r2 :: string } }"
 -- main "var a :: integer := 2"
-
+-- main "type { BOOL = integer; STRING = string }"
