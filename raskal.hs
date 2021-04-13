@@ -594,39 +594,51 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                   acc' = acc ++ [fragment']
                   tk2ty tk =
                     case tk of
-                      (_, BOOLEAN) -> Just Ras_Boolean
-                      (_, INTEGER) -> Just Ras_Integer
-                      (_, REAL) -> Just Ras_Real
-                      (_, STRING) -> Just Ras_String
-                      (_, CHAR) -> Just Ras_Char
-                      _ -> Nothing
+                      (_, BOOLEAN) -> (Just Ras_Boolean, symtbl, ts', Nothing)
+                      (_, INTEGER) -> (Just Ras_Integer, symtbl, ts', Nothing)
+                      (_, REAL) -> (Just Ras_Real, symtbl, ts', Nothing)
+                      (_, STRING) -> (Just Ras_String, symtbl, ts', Nothing)
+                      (_, CHAR) -> (Just Ras_Char, symtbl, ts', Nothing)
+                      (pos, RECORD) -> let qual = Ras_Record (pos, "", [])
+                                       in
+                                         (case (par_record symtbl qual ts') of
+                                            (r_ident, symtbl', tokens'', Nothing) -> (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
+                                                                                        Just (r_attr, _) -> (Just (Ras_Record r_attr), symtbl', tokens'', Nothing)
+                                                                                        Nothing -> ras_assert False (Nothing, symtbl', tokens'', Just [Par_error (pos, Compiler_internal_error)]) )
+                                            (r_ident, symtbl', tokens'', err) -> (Nothing, symtbl', tokens'', err)
+                                         )
+                      (pos, _) -> (Nothing, symtbl, ts', Just [Par_error (pos, Typedef_invalid_synon_type)])
               in
                 (case ts' of
-                   t':ts'' -> (case (tk2ty t') of
-                                 Just ty -> let entity  = Sym_typedef ((row_i, col_i), t_ident, ty)
-                                                fragment'' = fragment'{tydef_deftype = ty}
-                                                acc' = acc ++ [fragment'']
-                                            in
-                                              case (sym_regist False symtbl Cat_Sym_typedef entity fragment'') of
-                                                (symtbl', err) -> (case err of
-                                                                     Nothing -> (case ts'' of
-                                                                                   (_, SEMICOL):((row'', col''), RBRA):token'' -> (acc' ,symtbl', (((row'', col''), RBRA):token''), Nothing)
-                                                                                   ((row'', col''), RBRA):token'' -> (acc', symtbl', (((row'', col''), RBRA):token''), Nothing)
-                                                                                   ((row'', col''), SEMICOL):tokens'' -> par_tydef acc' symtbl' ts''
-                                                                                   _ -> (acc', symtbl', ts',Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))])
-                                                                                )
-                                                                     Just e -> let e' = Par_error ((row_i, col_i), e)
-                                                                               in
-                                                                                 let es = (case e of
-                                                                                             Symbol_redifinition -> (Par_error ((row_i, col_i), Typedef_redefinition))
-                                                                                             _ -> ras_assert False (Par_error ((row_i, col_i), Compiler_internal_error))
-                                                                                          ) : [e']
-                                                                                 in
-                                                                                   (acc', symtbl', ts', Just es)
-                                                                  )
-                                 Nothing -> (case t' of
-                                               ((row', col'), _) -> (acc', symtbl, ts0', Just [(Par_error ((row', col'), Typedef_invalid_synon_type))]) )
-                              )
+                   t':_ -> (case (tk2ty t') of
+                               (Just ty, symtbl', tokens'', Nothing) ->
+                                 let entity  = Sym_typedef ((row_i, col_i), t_ident, ty)  
+                                     fragment'' = fragment'{tydef_deftype = ty}
+                                     acc' = acc ++ [fragment'']
+                                 in
+                                   case (sym_regist False symtbl' Cat_Sym_typedef entity fragment'') of
+                                     (symtbl'', err) -> (case err of
+                                                           Nothing -> (case tokens'' of
+                                                                         t0'':ts'' -> (case ts'' of
+                                                                                         (_, SEMICOL):(pos'', RBRA):tokens'' -> (acc' ,symtbl'', ((pos'', RBRA):tokens''), Nothing)
+                                                                                         (pos'', RBRA):tokens'' -> (acc', symtbl'', ts'', Nothing)
+                                                                                         (pos'', SEMICOL):tokens'' -> par_tydef acc' symtbl'' ts''
+                                                                                         _ -> (acc', symtbl'', tokens'', Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))]) )
+                                                                         _ -> (acc', symtbl'', tokens'', Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))])
+                                                                      )
+                                                           Just e -> let e' = Par_error ((row_i, col_i), e)
+                                                                     in
+                                                                       let es = (case e of
+                                                                                   Symbol_redifinition -> (Par_error ((row_i, col_i), Typedef_redefinition))
+                                                                                   _ -> ras_assert False (Par_error ((row_i, col_i), Compiler_internal_error))
+                                                                                ) : [e']
+                                                                       in
+                                                                         (acc', symtbl'', tokens'', Just es)
+                                                        )
+                               (Nothing, symtbl', tokens'', err) -> (case err of
+                                                                       Just es -> (acc', symtbl', tokens'', err)
+                                                                       Nothing -> ras_assert False (acc', symtbl', tokens'', err) )
+                           )
                    _ -> (acc', symtbl, ts0', Just [(Par_error ((row_a, col_a), Typedef_no_synon_type))])
                 )
             ((row_i, col_i), IDENT t_ident):ts' -> (acc', symtbl, tokens', Just [(Par_error ((row_i, col_i), Typedef_no_synon_type))])
