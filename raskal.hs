@@ -1,4 +1,4 @@
-3-- :set -XRecordWildCards
+-- :set -XRecordWildCards
 {-# LANGUAGE RecordWildCards #-}
 
 import System.Environment
@@ -645,9 +645,12 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                        in
                                                                          (acc', symtbl'', tokens'', Just es)
                                                         )
-                               (Nothing, symtbl', tokens'', err) -> (case err of
-                                                                       Just es -> (acc', symtbl', tokens'', err)
-                                                                       Nothing -> ras_assert False (acc', symtbl', tokens'', err) )
+                               (Nothing, symtbl', tokens'', err) -> let fragment'' = fragment'{tydef_deftype = Ras_Illformed_type}
+                                                                        acc' = acc ++ [fragment'']
+                                                                    in
+                                                                      case err of
+                                                                        Just es -> (acc', symtbl', tokens'', err)
+                                                                        Nothing -> ras_assert False (acc', symtbl', tokens'', err)
                            )
                    _ -> (acc', symtbl, ts0', Just [(Par_error ((row_a, col_a), Typedef_no_synon_type))])
                 )
@@ -704,18 +707,18 @@ par_record symtbl qual@(Ras_Record ((r_decl, c_decl), _, _)) tokens0@(((row0, co
               let field = Ras_Record_field {memb_coord = pos, memb_ident = f_ident, memb_type = Ras_Unknown_type}
               in
                 (case ts of
-                   (pos', COLON):ts' -> (case (decl_type symtbl ts) of
-                                           (f_type, symtbl', tokens', err) ->
-                                             let acc' = acc ++ [field{memb_type = f_type}]
-                                             in
-                                               case err of
-                                                 Nothing -> (case tokens' of
-                                                               (_, _):(pos'', SEMICOL):ts'' -> decl_fields acc' symtbl' ((pos'', SEMICOL):ts'')
-                                                               (_, _):(pos'', _):ts'' -> (acc', symtbl', tokens', Nothing)
-                                                               (_, _):ts'' -> (acc', symtbl', tokens', Nothing)
-                                                               _ -> (acc', symtbl', tokens', Nothing) )
-                                                 _ -> (acc', symtbl', tokens', err)
-                                        )
+                   (pos', TYPED_AS):ts' -> (case (decl_type symtbl ts) of
+                                              (f_type, symtbl', tokens', err) ->
+                                                let acc' = acc ++ [field{memb_type = f_type}]
+                                                in
+                                                  case err of
+                                                    Nothing -> (case tokens' of
+                                                                  (_, _):(pos'', SEMICOL):ts'' -> decl_fields acc' symtbl' ((pos'', SEMICOL):ts'')
+                                                                  (_, _):(pos'', _):ts'' -> (acc', symtbl', tokens', Nothing)
+                                                                  (_, _):ts'' -> (acc', symtbl', tokens', Nothing)
+                                                                  _ -> (acc', symtbl', tokens', Nothing) )
+                                                    _ -> (acc', symtbl', tokens', err)
+                                           )
                    (pos', _):ts' -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error (pos', Illformed_Declarement))])
                    _ -> ((acc ++ [field]), symtbl, tokens, Just [(Par_error (pos, Illformed_Declarement))])
                 )
@@ -880,7 +883,6 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
               ((row, col), _):ts -> (symtbl, acc, tokens, Just [Par_error ((row, col), Illformed_Declarement)])
               _ -> (symtbl, acc, [], Just [Par_error ((row0, col0), Illformed_Declarement)])
            )
-         {- Ras_Typedef ty_ident -> -}
          _ -> let v_memb = Mediate_code_raw_Var (Mediate_var_attr {var_coord = (memb_coord f), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                    var_attr = (Var_attr_const ((-1, -1), Ras_Const_not_defined))})
               in
@@ -900,15 +902,6 @@ par_record_const acc symtbl (r_ident, fields) tokens0@(((row0, col0), _):tokens)
                                  Ras_Record (_, r_ident, r_fields) ->
                                    Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row_t, col_t), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                            var_attr = Var_attr_fields (padding (row_t, col_t) r_fields)})
-                                 {- Ras_Typedef ty_ident ->
-                                   (case (sym_lookup_typedef symtbl ty_ident) of
-                                      Just (ty_def, _) -> 
-                                        (case (padding [ty_def]) of
-                                           p:ps -> ras_assert (ps == []) (Mediate_code_raw_Var (Mediate_var_attr {var_ident = (memb_ident f), var_type = (memb_type f),
-                                                                                                              var_attr = Var_attr_typedef p}))
-                                           _ -> ras_assert False [] )
-                                      Nothing -> ras_assert False []
-                                   ) -}
                                  _ -> Mediate_code_raw_Var (Mediate_var_attr {var_coord = (row_t, col_t), var_ident = (memb_ident f), var_type = (memb_type f),
                                                                               var_attr = Var_attr_const ((-1, -1), Ras_Const_not_defined)})
                               ) : (padding (row_t, col_t) fs)
@@ -1141,14 +1134,14 @@ main src =
                                (t:ts) -> t:(lex_purge ts)
 
 
--- main "var a :: record { alpha : integer; beta : string }"
--- main "var a :: record { alpha : integer; beta : string } := { 3; "hello" }"
--- main "var a :: record { alpha : integer; beta : record { r1 : integer } }"
--- main "var a :: record { alpha : integer; beta :: record { r1 :: integer; r2 :: string } }"
+-- main "var a :: record { alpha :: integer; beta :: string }"
+-- main "var a :: record { alpha :: integer; beta :: string } := { 3; "hello" }"
+-- main "var a :: record { alpha :: integer; beta :: record { r1 :: integer } }"
+-- main "var a :: record { alpha :: integer; beta :: record { r1 :: integer; r2 :: string } }"
 -- main "var a :: integer := 2"
 -- main "type { BOOL = integer; STRING = string }"
 -- main "type { RECORD = record {i: integer} }"
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL"
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL := 1"
 -- main "type { BOOL = integer; STRING = string }; type { BOOL_PRIME = BOOL; BOOL_PRIPRI = BOOL_PRIME }; var a :: BOOL_PRIPRI := 13"
--- main "type {BOOL = integer; PROPERTY = record { PRIVILEGE : BOOL }}; var a :: PROPERTY := { 1 }"
+-- main "type {BOOL = integer; PROPERTY = record { PRIVILEGE :: BOOL }}; var a :: PROPERTY := { 1 }"
