@@ -590,7 +590,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
         in
           case tokens' of
             ((row_i, col_i), IDENT t_ident):(ts0'@(((row_a, col_a), ASGN):ts')) ->
-              let fragment' = fragment{tydef_ident = t_ident}
+              let fragment' = fragment{tydef_coord = (row_i, col_i), tydef_ident = t_ident}
                   acc' = acc ++ [fragment']
                   tk2ty tk =
                     case tk of
@@ -609,7 +609,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                          )
                       (pos, IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
                                                   Just ((pos', ty_ident', deftype), _) ->
-                                                    (case (ras_assert (ty_ident == ty_ident') deftype) of
+                                                    (case (ras_assert (ty_ident' == ty_ident) deftype) of
                                                        Ras_Typedef _ -> assert False (Nothing, symtbl, ts', Just [Par_error (pos, Compiler_internal_error)])
                                                        ty | ((ty == Ras_Bottom_type) || (ty == Ras_Unknown_type) || (ty == Ras_Illformed_type)) ->
                                                             (Nothing, symtbl, ts', Just [Par_error (pos, Typedef_invalid_synon_type)])
@@ -658,36 +658,46 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
     let fragment = Mediate_code_raw_typedef {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
     in
       case (assert (tk0 == TYPE) tokens) of
-        ((row_L, col_L), LBRA):ts -> (case ts of
-                                        ((row', col'), RBRA):ts' -> ([fragment], symtbl, ts, Nothing)
-                                        ((row', col'), _):ts' -> par_tydef_body [] symtbl tokens
-                                     )
+        (_, LBRA):ts -> (case ts of
+                           (_, RBRA):ts' -> ([fragment], symtbl, ts, Nothing)
+                           (_, _):ts' -> par_tydef_body [] symtbl tokens
+                        )
         _ -> ([fragment], symtbl, tokens0, Just [(Par_error ((row0, col0), Typedef_illformed_declarement))])
 
 
 par_record symtbl qual@(Ras_Record ((r_decl, c_decl), _, _)) tokens0@(((row0, col0), tk0):tokens) =
   ras_trace "in par_record" (
-  let decl_fields acc symtbl tokens0@(((row0, col0), _):tokens) =
-        let decl_type symtbl tokens0@(((row0, col0), _):tokens) =
+  let decl_fields acc symtbl tokens0@((pos0, _):tokens) =
+        let decl_type symtbl tokens0@((pos0, _):tokens) =
               case tokens of
                 (_, BOOLEAN):ts -> (Ras_Boolean, symtbl, tokens, Nothing)
                 (_, INTEGER):ts -> (Ras_Integer, symtbl, tokens, Nothing)
                 (_, REAL):ts -> (Ras_Real, symtbl, tokens, Nothing)
                 (_, STRING):ts -> (Ras_String, symtbl, tokens, Nothing)
                 (_, CHAR):ts -> (Ras_Char, symtbl, tokens, Nothing)
-                ((row, col), RECORD):ts ->
-                  let qual' = Ras_Record ((row, col), "", [])
+                (pos, RECORD):ts ->
+                  let qual' = Ras_Record (pos, "", [])
                   in
                     (case (par_record symtbl qual' tokens) of
                        (r_ident, symtbl', tokens', Nothing) -> (case (sym_lookup_rec symtbl' Cat_Sym_record r_ident) of
                                                                   Just (sig, _) -> (Ras_Record sig, symtbl', tokens', Nothing)
                                                                   Nothing -> assert False (Ras_Unknown_type, (leave_scope symtbl' Cat_Sym_record), tokens',
-                                                                                           Just [(Par_error ((row, col), Compiler_internal_error))])
+                                                                                           Just [(Par_error (pos, Compiler_internal_error))])
                                                                )
                        (_, symtbl', tokens', err) -> (Ras_Illformed_type, (leave_scope symtbl' Cat_Sym_record), tokens', err)
                     )
-                ((row, col), _):ts -> (Ras_Illformed_type, symtbl, tokens0, Just [(Par_error ((row, col), Illformed_Declarement))])
-                _ ->(Ras_Illformed_type, symtbl, tokens0, Just [(Par_error ((row0, col0), Illformed_Declarement))])
+                (pos, IDENT ty_ident):ts -> (case (sym_lookup_typedef symtbl ty_ident) of
+                                               Just ((pos', ty_ident', deftype), _) ->
+                                                 (case (ras_assert (ty_ident' == ty_ident) deftype) of
+                                                    Ras_Typedef _ -> assert False (Ras_Illformed_type, symtbl, tokens, Just [Par_error (pos, Compiler_internal_error)])
+                                                    ty | ((ty == Ras_Bottom_type) || (ty == Ras_Unknown_type) || (ty == Ras_Illformed_type)) ->
+                                                         (Ras_Illformed_type, symtbl, tokens, Just [(Par_error (pos, Illformed_Declarement))])
+                                                    _ -> (deftype, symtbl, tokens, Nothing)
+                                                 )
+                                               Nothing -> (Ras_Illformed_type, symtbl, tokens, Just [(Par_error (pos, Illformed_Declarement))])
+                                            )
+                (pos, _):ts -> (Ras_Illformed_type, symtbl, tokens0, Just [(Par_error (pos, Illformed_Declarement))])
+                _ ->(Ras_Illformed_type, symtbl, tokens0, Just [(Par_error (pos0, Illformed_Declarement))])
         in
           case tokens of
             ((row, col), IDENT f_ident):ts ->
@@ -988,7 +998,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                           )
                                                       ((row'', col''), IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
                                                                                              Just ((pos, ty_ident', deftype), _) ->
-                                                                                               (case (ras_assert (ty_ident == ty_ident') deftype) of
+                                                                                               (case (ras_assert (ty_ident' == ty_ident) deftype) of
                                                                                                   Ras_Typedef (pos, ty_ident', deftype') ->
                                                                                                     ras_assert False (vars, symtbl, ts', Just [(Par_error (pos, Compiler_internal_error))])
                                                                                                   Ras_Record (pos, r_ident, r_fields) ->
@@ -1141,3 +1151,4 @@ main src =
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL"
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL := 1"
 -- main "type { BOOL = integer; STRING = string }; type { BOOL_PRIME = BOOL; BOOL_PRIPRI = BOOL_PRIME }; var a :: BOOL_PRIPRI := 13"
+-- main "type {BOOL = integer; PROPERTY = record { PRIVILEGE : BOOL }}; var a :: PROPERTY := { 1 }"
