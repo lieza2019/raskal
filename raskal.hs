@@ -1,4 +1,4 @@
--- :set -XRecordWildCards
+3-- :set -XRecordWildCards
 {-# LANGUAGE RecordWildCards #-}
 
 import System.Environment
@@ -450,21 +450,21 @@ sym_lookup_rec_decl symtbl ident =
   )
 
 
-sym_lookup_typedef symtbl cat ident =
+sym_lookup_typedef symtbl ident =
   ras_trace "in sym_lookup_typedef" (
-  let trying = sym_search symtbl cat ident
+  let trying = sym_search symtbl Cat_Sym_typedef ident
   in
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
                                           Attrib_Typedef at -> Just (at, whole_attr)
-                                          _ -> sym_lookup_typedef remainders cat ident )
+                                          _ -> sym_lookup_typedef remainders ident )
   )
 
 
 sym_lookup_typedef_decl symtbl ident =
   ras_trace "in sym_lookup_typedef_decl" (
-  sym_lookup_typedef symtbl Cat_Sym_decl ident
+  sym_lookup_typedef symtbl ident
   )
 
 
@@ -590,7 +590,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
         in
           case tokens' of
             ((row_i, col_i), IDENT t_ident):(ts0'@(((row_a, col_a), ASGN):ts')) ->
-              let fragment' = fragment{tydef_coord = (row_i, col_i), tydef_ident = t_ident}
+              let fragment' = fragment{tydef_ident = t_ident}
                   acc' = acc ++ [fragment']
                   tk2ty tk =
                     case tk of
@@ -923,7 +923,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                        Nothing -> (case (def_and_reg symtbl' vs) of
                                      (symtbl', vs') -> (symtbl', v:vs') )
                        Just err -> def_and_reg symtbl' vs
-                     )
+                    )
         in
             case tokens of
               ((row, col), DEF):ts -> (case (par_init_on_decl symtbl True vars tokens) of
@@ -951,6 +951,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                       _ -> ((-1, -1), r_ident, [])
                                                        in                                                        
                                                          map (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_type = Ras_Record r_attr})) vars
+                                                     
                                                  in
                                                    (case u of
                                                       (_, BOOLEAN)-> tychk_and_reg symtbl Ras_Boolean (reveal_scl Ras_Boolean vars) ts'
@@ -975,6 +976,18 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                   _ -> ((reveal_rec symtbl' r_ident vars), symtbl', us', err)
                                                                )
                                                           )
+                                                      ((row'', col''), IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
+                                                                                             Just ((pos, ty_ident', deftype), _) ->
+                                                                                               (case (ras_assert (ty_ident == ty_ident') deftype) of
+                                                                                                  Ras_Record (pos, r_ident, r_fields) ->
+                                                                                                    (case (par_init_on_decl symtbl True (reveal_rec symtbl r_ident vars) ts') of
+                                                                                                       (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
+                                                                                                  Ras_Typedef (pos, ty_ident', deftype') ->
+                                                                                                    ras_assert False (vars, symtbl, ts', Just [(Par_error (pos, Compiler_internal_error))])
+                                                                                                  _ -> tychk_and_reg symtbl deftype (reveal_scl deftype vars) ts'
+                                                                                               )
+                                                                                             Nothing -> (vars, symtbl, ts', Just [(Par_error ((row'', col''), Illformed_Declarement))])
+                                                                                          )
                                                       ((row'', col''), _) -> (acc, symtbl, ts, Just [(Par_error ((row'', col''), Illformed_Declarement))])
                                                    )
                                          _ -> (vars, symtbl, ts, Just [(Par_error ((row', col'), Illformed_Declarement))])
@@ -1063,6 +1076,7 @@ ras_parse forest symtbl tokens error =
   )
 
 
+--main =
 main src =
   let lexicon = [("and", AND), ("array", ARRAY),
                  ("begin", BEGIN), ("boolean", BOOLEAN),
@@ -1086,7 +1100,7 @@ main src =
   in
     do
       {-
-      tokens <- return (case (lex_main lexicon (1,1) "var a :: record { alpha : integer; beta : record { r1 : string }; gamma : record {r1 : integer} } := { 1; {\"Hello World!\"};}") of
+      tokens <- return (case (lex_main lexicon (1,1) "type { RECORD = record {i: integer} }") of
                           [] -> []
                           ts -> if ( (length ts) > (length (lex_purge ts)) ) then [] else ts
                        ) -}
@@ -1112,3 +1126,5 @@ main src =
 -- main "var a :: record { alpha : integer; beta :: record { r1 :: integer; r2 :: string } }"
 -- main "var a :: integer := 2"
 -- main "type { BOOL = integer; STRING = string }"
+-- main "type { RECORD = record {i: integer} }"
+-- main "type { BOOL = integer; STRING = string }; var a :: BOOL"
