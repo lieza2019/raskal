@@ -584,7 +584,7 @@ leave_scope symtbl cat =
 
 
 par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
-  let par_tydef acc symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
+  let par_tydef_body acc symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
         let fragment = Mediate_code_raw_typedef {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
             acc' = acc ++ [fragment]
         in
@@ -607,6 +607,16 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                                         Nothing -> ras_assert False (Nothing, symtbl', tokens'', Just [Par_error (pos, Compiler_internal_error)]) )
                                             (r_ident, symtbl', tokens'', err) -> (Nothing, symtbl', tokens'', err)
                                          )
+                      (pos, IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
+                                                  Just ((pos', ty_ident', deftype), _) ->
+                                                    (case (ras_assert (ty_ident == ty_ident') deftype) of
+                                                       Ras_Typedef _ -> assert False (Nothing, symtbl, ts', Just [Par_error (pos, Compiler_internal_error)])
+                                                       ty | ((ty == Ras_Bottom_type) || (ty == Ras_Unknown_type) || (ty == Ras_Illformed_type)) ->
+                                                            (Nothing, symtbl, ts', Just [Par_error (pos, Typedef_invalid_synon_type)])
+                                                       _ -> (Just deftype, symtbl, ts', Nothing)
+                                                    )
+                                                  Nothing -> (Nothing, symtbl, ts', Just [Par_error (pos, Typedef_invalid_synon_type)])
+                                               )
                       (pos, _) -> (Nothing, symtbl, ts', Just [Par_error (pos, Typedef_invalid_synon_type)])
               in
                 (case ts' of
@@ -622,7 +632,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                          t0'':ts'' -> (case ts'' of
                                                                                          (_, SEMICOL):(pos'', RBRA):tokens'' -> (acc' ,symtbl'', ((pos'', RBRA):tokens''), Nothing)
                                                                                          (pos'', RBRA):tokens'' -> (acc', symtbl'', ts'', Nothing)
-                                                                                         (pos'', SEMICOL):tokens'' -> par_tydef acc' symtbl'' ts''
+                                                                                         (pos'', SEMICOL):tokens'' -> par_tydef_body acc' symtbl'' ts''
                                                                                          _ -> (acc', symtbl'', tokens'', Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))]) )
                                                                          _ -> (acc', symtbl'', tokens'', Just [(Par_error ((row_i, col_i), Typedef_illformed_declarement))])
                                                                       )
@@ -650,7 +660,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
       case (assert (tk0 == TYPE) tokens) of
         ((row_L, col_L), LBRA):ts -> (case ts of
                                         ((row', col'), RBRA):ts' -> ([fragment], symtbl, ts, Nothing)
-                                        ((row', col'), _):ts' -> par_tydef [] symtbl tokens
+                                        ((row', col'), _):ts' -> par_tydef_body [] symtbl tokens
                                      )
         _ -> ([fragment], symtbl, tokens0, Just [(Par_error ((row0, col0), Typedef_illformed_declarement))])
 
@@ -979,11 +989,11 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                       ((row'', col''), IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
                                                                                              Just ((pos, ty_ident', deftype), _) ->
                                                                                                (case (ras_assert (ty_ident == ty_ident') deftype) of
+                                                                                                  Ras_Typedef (pos, ty_ident', deftype') ->
+                                                                                                    ras_assert False (vars, symtbl, ts', Just [(Par_error (pos, Compiler_internal_error))])
                                                                                                   Ras_Record (pos, r_ident, r_fields) ->
                                                                                                     (case (par_init_on_decl symtbl True (reveal_rec symtbl r_ident vars) ts') of
                                                                                                        (symtbl', vars', tokens', err) -> (vars', symtbl', tokens', err) )
-                                                                                                  Ras_Typedef (pos, ty_ident', deftype') ->
-                                                                                                    ras_assert False (vars, symtbl, ts', Just [(Par_error (pos, Compiler_internal_error))])
                                                                                                   _ -> tychk_and_reg symtbl deftype (reveal_scl deftype vars) ts'
                                                                                                )
                                                                                              Nothing -> (vars, symtbl, ts', Just [(Par_error ((row'', col''), Illformed_Declarement))])
@@ -995,6 +1005,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                     _ -> tychk_and_reg symtbl Ras_Bottom_type vars tokens
                                  )
                        _ -> tychk_and_reg symtbl Ras_Bottom_type vars tokens
+                 ((row, col), _) -> (acc, symtbl, tokens, Just [(Par_error ((row, col), Illformed_Declarement))])
               )
   )
 
@@ -1128,3 +1139,5 @@ main src =
 -- main "type { BOOL = integer; STRING = string }"
 -- main "type { RECORD = record {i: integer} }"
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL"
+-- main "type { BOOL = integer; STRING = string }; var a :: BOOL := 1"
+-- main "type { BOOL = integer; STRING = string }; type { BOOL_PRIME = BOOL; BOOL_PRIPRI = BOOL_PRIME }; var a :: BOOL_PRIPRI := 13"
