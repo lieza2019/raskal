@@ -10,12 +10,14 @@ import Debug.Trace
 data Ras_Error =
   Illformed_Declarement
   | Tycon_mismatched
+  | Symbol_notdefined
   | Symbol_redifinition
   | Typedef_no_synon_name
   | Typedef_no_synon_type
   | Typedef_invalid_synon_type
   | Typedef_redefinition
   | Typedef_illformed_declarement
+  | Expr_illformed_subexpr
   | Expr_no_asgn
   | Expr_no_valid_lvalue
   | Expr_no_valid_rvalue
@@ -254,6 +256,11 @@ par_real_const tk_past tokens =
 
 data Mediate_code_mnemonic =
   Mn_asgn
+  | Mn_add
+  | Mn_sub
+  | Mn_mul
+  | Mn_div
+  | Mn_mod
   deriving (Eq, Ord, Show)
 
 data Mediate_var_attr =
@@ -278,8 +285,8 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
     Ras_Top_type -> True
     Ras_Boolean -> (ty1 == Ras_Boolean) || (ty1 == Ras_Bottom_type)
     Ras_Integer -> (ty1 == Ras_Integer) || (ty1 == Ras_Bottom_type)
-    Ras_Real -> (ty1 == Ras_Integer) || (ty1 == Ras_Real) || (ty1 == Ras_Bottom_type)
-    Ras_String -> (ty1 == Ras_Char) || (ty1 == Ras_String) || (ty1 == Ras_Bottom_type)
+    Ras_Real -> (ty1 == Ras_Real) || (ty1 == Ras_Integer) || (ty1 == Ras_Bottom_type)
+    Ras_String -> (ty1 == Ras_String) || (ty1 == Ras_Char) || (ty1 == Ras_Bottom_type)
     Ras_Char -> (ty1 == Ras_Char) || (ty1 == Ras_Bottom_type)
     Ras_Bottom_type -> (ty1 == Ras_Bottom_type)
     _ -> False
@@ -299,6 +306,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                      _ -> Ras_Unknown_type
                                   )
     Mediate_code_raw_Var var -> var_type var
+    Mediate_code_fragment_raw_None -> Ras_Bottom_type
     _ -> Ras_Unknown_type
   )
 
@@ -1145,3 +1153,52 @@ main src =
 -- main "type { BOOL = integer; STRING = string }; var a :: BOOL := 1"
 -- main "type { BOOL = integer; STRING = string }; type { BOOL_PRIME = BOOL; BOOL_PRIPRI = BOOL_PRIME }; var a :: BOOL_PRIPRI := 13"
 -- main "type {BOOL = integer; PROPERTY = record { PRIVILEGE :: BOOL }}; var a :: PROPERTY := { 1 }"
+
+
+{-
+  numeric_expr := numeric_const | numeric_var
+  binary_expr := numeric_expr1 + numeric_expr2 | numeric_expr1 - numeric_expr2 | numeric_expr1 * numeric_expr2 | numeric_expr1 / numeric_expr2 | numeric_expr1 % numeric_expr2
+               | binary_expr1 + binary_expr2 | binary_expr1 - binary_expr2 | binary_expr1 * binary_expr2 | binary_expr1 / binary_expr2 | binary_expr1 % binary_expr2 
+               | ( binary_expr )
+-}
+par_expr symtbl tokens =
+  case tokens of
+    [] -> (Mediate_code_fragment_raw_None, symtbl, [], Nothing)
+    t:ts ->
+      (case t of
+         -- for the case of numeric_var,
+         ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
+                                          Just (sig, attr) -> (case (attr_fragment attr) of
+                                                                 Mediate_code_raw_Var _ ->
+                                                                   (case ts of
+                                                                      (_, CROSS):ts' ->
+                                                                        let (expr1, symtbl', tokens'@(((row', col'), _):_), r)= (par_expr symtbl ts')
+                                                                        in
+                                                                          let (expr1', r') = (case expr1 of
+                                                                                                Mediate_code_raw_Var _ -> (expr1, Nothing)
+                                                                                                Mediate_code_raw_Bin {..} -> (expr1, Nothing)
+                                                                                                Mediate_code_raw_Literal (Numeric_const c) ->
+                                                                                                  (case c of
+                                                                                                     Ras_Integer_const _ -> (expr1, Nothing)
+                                                                                                     Ras_Real_const _ -> (expr1, Nothing)
+                                                                                                     _ -> (Mediate_code_fragment_raw_None,
+                                                                                                           Just [(Par_error ((row', col'), Compiler_internal_error))])
+                                                                                                  )
+                                                                                                Mediate_code_raw_Literal _ ->
+                                                                                                  (Mediate_code_fragment_raw_None, Just [(Par_error ((row', col'), Tycon_mismatched))])
+                                                                                                Mediate_code_raw_typedef {tydef_coord = (row', col')} ->
+                                                                                                  (Mediate_code_fragment_raw_None, Just [(Par_error ((row', col'), Expr_illformed_subexpr))])
+                                                                                                _ -> (Mediate_code_fragment_raw_None, Just [(Par_error ((row', col'), Compiler_internal_error))])
+                                                                                             )
+                                                                          in
+                                                                            (Mediate_code_raw_Bin {mnemonic = Mn_add, operand_0 = (attr_fragment attr), operand_1 = expr1'}, symtbl', tokens',
+                                                                             (append_error r' r))
+                                                                   )
+                                                                 Mediate_code_raw_typedef {..} ->
+                                                                   (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                                 _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                                                      
+                                                              )
+                                          Nothing -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
+                                       )
+      )
