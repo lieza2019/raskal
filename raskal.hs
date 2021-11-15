@@ -1169,32 +1169,28 @@ par_asgn symtbl ((row, col), ident) tokens =
     Just (sig, attr) ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = Mediate_code_fragment_raw_None}
       in
-        (case tokens of
-           [] -> ([fr_asgn], symtbl, [], Just [(Par_error ((row, col), Expr_no_asgn))])
-           ((row', col'), ASGN):ts ->
-             let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
+        case tokens of
+          [] -> ([fr_asgn], symtbl, [], Just [(Par_error ((row, col), Expr_no_asgn))])
+          ((row', col'), ASGN):ts ->
+            (let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
                    case lvalue of
                      Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl Cat_Sym_decl (Sym_var var) lvalue
                                                  in
-                                                   (case r of
-                                                      Nothing -> (expr_asgn, symtbl', Nothing)
-                                                      Just err -> assert False (expr_asgn, symtbl', Just [(Par_error ((row, col), Compiler_internal_error))])
-                                                   )
+                                                   case r of
+                                                     Nothing -> (expr_asgn, symtbl', Nothing)
+                                                     Just err -> assert False (expr_asgn, symtbl', Just [(Par_error ((row, col), Compiler_internal_error))])
                      _ -> (expr_asgn, symtbl, Just [(Par_error ((row, col), Expr_no_valid_lvalue))])
              in
-               (case (par_expr Nothing symtbl ts) of
-                  (expr_r, symtbl', tokens', r) -> let fr_asgn' = fr_asgn{operand_1 = expr_r}
-                                               in
-                                                 if (r == Nothing) then
-                                                   (case (typecheck (row, col) fr_asgn') of
+               case (par_expr Nothing symtbl ts) of
+                 (expr_r, symtbl', tokens', r) -> let fr_asgn' = fr_asgn{operand_1 = expr_r}
+                                                  in
+                                                    case (typecheck (row, col) fr_asgn') of
                                                       (fr_asgn', Nothing) -> (case (update symtbl fr_asgn') of
-                                                                                (fr_asgn', symtbl', r) -> ([fr_asgn'], symtbl', tokens', r) )
-                                                      (fr_asgn', r) -> ([fr_asgn'], symtbl', tokens', r)
-                                                   )
-                                                 else ([fr_asgn'], symtbl', tokens', r)
-               )
-           _ -> ([fr_asgn], symtbl, tokens, Just [(Par_error ((row, col), Expr_no_asgn))])
-        )
+                                                                                (fr_asgn', symtbl', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
+                                                                             )
+                                                      (fr_asgn', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
+            )
+          _ -> ([fr_asgn], symtbl, tokens, Just [(Par_error ((row, col), Expr_no_asgn))])
     Nothing ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = Mediate_code_fragment_raw_None, operand_1 = Mediate_code_fragment_raw_None}
           err_lhs_notdefined errors =
@@ -1204,15 +1200,14 @@ par_asgn symtbl ((row, col), ident) tokens =
                 Nothing -> Just [err]
                 Just es -> Just (err:es)
       in
-        (case tokens of
-           [] -> ([fr_asgn], symtbl, [], (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
-           ((row', col'), ASGN):ts -> (case (par_expr Nothing symtbl ts) of
-                                         (expr_r, symtbl', ts', r) -> ([fr_asgn{operand_1 = expr_r}], symtbl', ts', (err_lhs_notdefined r))
-                                      )
-           _ -> ([fr_asgn], symtbl, tokens, (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
-        )
+        case tokens of
+          [] -> ([fr_asgn], symtbl, [], (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
+          ((row', col'), ASGN):ts -> (case (par_expr Nothing symtbl ts) of
+                                        (expr_r, symtbl', ts', r) -> ([fr_asgn{operand_1 = expr_r}], symtbl', ts', (err_lhs_notdefined r))
+                                     )
+          _ -> ([fr_asgn], symtbl, tokens, (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
   )
-  
+
 
 ras_parse forest symtbl tokens error =
   ras_trace "in ras_parse" (
