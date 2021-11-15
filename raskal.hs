@@ -18,6 +18,7 @@ data Ras_Error =
   | Typedef_redefinition
   | Typedef_illformed_declarement
   | Expr_illformed_subexpr
+  | Expr_illegal_operation
   | Expr_no_asgn
   | Expr_no_valid_lvalue
   | Expr_no_valid_rvalue
@@ -191,6 +192,8 @@ lex_main lexicon (row, col) src =
              | c == '.' -> ((row, col), DOT):(lex_main lexicon (row, col + 1) cs)
              | c == '+' -> ((row, col), CROSS):(lex_main lexicon (row, col + 1) cs)
              | c == '-' -> ((row, col), MINUS):(lex_main lexicon (row, col + 1) cs)
+             | c == '*' -> ((row, col), STAR):(lex_main lexicon (row, col + 1) cs)
+             | c == '/' -> ((row, col), SLASH):(lex_main lexicon (row, col + 1) cs)
              | c == '\'' -> lex_const par_chr_const (row, col + 1) cs
              | c == '"' -> lex_const par_str_const (row, col + 1) cs
              | (isDigit c) -> lex_const ( par_num_const ((ord c) - (ord '0')) ) (row, col + 1) cs
@@ -1031,7 +1034,7 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
 
 
 --par_expr symtbl tokens = (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
-par_expr symtbl tokens =
+par_expr pre_ope symtbl tokens =
   let tk2ope token = (case token of
                         (_, CROSS) -> Just Mn_add
                         (_, MINUS) -> Just Mn_sub
@@ -1040,12 +1043,13 @@ par_expr symtbl tokens =
                         (_, PERCENT) -> Just Mn_mod
                         _ -> Nothing
                      )
-      par_bin_expr symtbl tokens expr1 (((row, col), _), operator) =
+      par_bin_expr expr1 symtbl tokens (((row, col), _), operator) =
         let assoc_l expr2=
               case expr2 of
                 Mediate_code_raw_Var _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Literal _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Par _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Una _ _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr2_0, operand_1 = expr2_1}
                   | ((m == Mn_add) || (m == Mn_sub)) -> let (expr2_0', r) = (assoc_l expr2_0)
                                                         in
@@ -1064,7 +1068,7 @@ par_expr symtbl tokens =
                 Mediate_code_fragment_raw_None -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Just (Par_error ((row, col), Expr_illformed_subexpr)))
                                                    
         in
-          let (expr2, symtbl', tokens', r) = (par_expr symtbl tokens)
+          let (expr2, symtbl', tokens', r) = (par_expr Nothing symtbl tokens)
           in
             case (assoc_l expr2) of
               (expr', r') -> let r'' = case r' of
@@ -1073,97 +1077,90 @@ par_expr symtbl tokens =
                              in
                                (expr', symtbl', tokens', r'')
   in
-    case tokens of
-      [] -> (Mediate_code_fragment_raw_None, symtbl, [], Nothing)
-      t:ts ->
-        (case t of
-           ((row, col), CROSS) -> par_expr symtbl ts
-           ((row, col), MINUS) -> let (expr, symtbl', tokens', r) = (par_expr symtbl ts)
-                                  in
-                                    case r of
-                                      Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
-                                      Nothing -> (case expr of
-                                                    Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                    _ -> ((Mediate_code_raw_Una Mn_neg expr), symtbl', tokens', Nothing)
-                                                 )
-           ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
-                                            Just (sig, attr) -> let expr1 = (attr_fragment attr)
-                                                                in
-                                                                  case expr1 of
-                                                                    Mediate_code_raw_Var _ -> (case ts of
-                                                                                                 [] -> (expr1, symtbl, [], Nothing)
-                                                                                                 t':ts' -> (case (tk2ope t') of
-                                                                                                              Just ope -> par_bin_expr symtbl ts' expr1 (t', ope)
-                                                                                                              Nothing -> (expr1, symtbl, ts, Nothing)
-                                                                                                           )
-                                                                                              )
-                                                                    Mediate_code_raw_typedef {..} -> (Mediate_code_fragment_raw_None, symtbl, tokens,
-                                                                                                      Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                                    _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
-                                            Nothing -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
-                                         )
-           ((row,col), NUM_CONST n) ->
-             let par_goes_on_num (expr, symtbl, tokens, r) =
-                   case tokens of
-                     [] -> (expr, symtbl, [], r)
-                     t:ts -> (case (tk2ope t) of
-                                Just ope -> par_bin_expr symtbl ts expr (t, ope)
-                                Nothing -> (expr, symtbl, tokens, r)
-                             )
-             in
-               let (expr, tokens',r) = (case n of
-                                          Ras_Integer_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
-                                          Ras_Real_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
-                                          _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
-                                       )
+    let par_goes_on_num (expr, symtbl, tokens, r) =
+          let goes_on = case tokens of
+                          [] -> (expr, symtbl, [], r)
+                          t:ts -> (case (tk2ope t) of
+                                     Just ope -> par_bin_expr expr symtbl ts (t, ope)
+                                     Nothing -> (expr, symtbl, tokens, r)
+                                  )
+          in
+            case pre_ope of
+              Just _ -> (expr, symtbl, tokens, r)
+              Nothing -> goes_on
+        par_goes_on_str (expr, symtbl, tokens, r) =
+          let goes_on  = case tokens of
+                           [] -> (expr, symtbl, [], r)
+                           t:ts -> (case (tk2ope t) of
+                                      Just ope
+                                        | ope == Mn_add -> par_bin_expr expr symtbl ts (t, ope)
+                                        | otherwise -> (expr, symtbl, tokens, r)
+                                      Nothing -> (expr, symtbl, tokens, r)
+                                   )
+          in
+            case pre_ope of
+              Just ((row, col), _) -> (expr, symtbl, tokens, (add_error r (Par_error ((row, col), Expr_illegal_operation))))
+              Nothing -> goes_on
+    in
+      case tokens of
+        [] -> (Mediate_code_fragment_raw_None, symtbl, [], Nothing)
+        t:ts ->
+          (case t of
+             ((row, col), CROSS) -> par_expr Nothing symtbl ts
+             ((row, col), MINUS) -> let (expr, symtbl', tokens', r) = (par_expr (Just t) symtbl ts)
+                                    in
+                                      case r of
+                                        Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
+                                        Nothing -> (case expr of
+                                                      Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                      _ -> par_goes_on_num ((Mediate_code_raw_Una Mn_neg expr), symtbl', tokens', Nothing)
+                                                   )
+             ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
+                                              Just (sig, attr) -> let expr1 = (attr_fragment attr)
+                                                                  in
+                                                                    case expr1 of
+                                                                      Mediate_code_raw_Var _ -> par_goes_on_num (expr1, symtbl, ts, Nothing)
+                                                                      Mediate_code_raw_typedef {..} -> (Mediate_code_fragment_raw_None, symtbl, tokens,
+                                                                                                        Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                                      _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                              Nothing -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
+                                           )
+             ((row,col), NUM_CONST n) ->
+               let (expr, tokens', r) = (case n of
+                                           Ras_Integer_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
+                                           Ras_Real_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
+                                           _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                        )
                in
                  par_goes_on_num (expr, symtbl, tokens', r)
-           ((row,col), STR_CONST s) ->
-             let par_goes_on_str (expr, symtbl, tokens, r) =
-                   case tokens of
-                     [] -> (expr, symtbl, [], r)
-                     t:ts -> (case (tk2ope t) of
-                                Just ope
-                                  | ope == Mn_add -> par_bin_expr symtbl ts expr (t, ope)
-                                  | otherwise -> (expr, symtbl, tokens, r)
-                                Nothing -> (expr, symtbl, tokens, r)
-                             )
-             in
+             ((row,col), STR_CONST s) ->
                let (expr, tokens', r) = (case s of
                                            Ras_String_const _ -> ((Mediate_code_raw_Literal (String_const s)), ts, Nothing)
                                            _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
                                         )
                in
                  par_goes_on_str (expr, symtbl, tokens', r)
-           ((row,col), CHR_CONST c) ->
-             let par_goes_on_chr (expr, symtbl, tokens, r) =
-                   case tokens of
-                     [] -> (expr, symtbl, [], r)
-                     t:ts -> (case (tk2ope t) of
-                                Just ope -> par_bin_expr symtbl ts expr (t, ope)
-                                Nothing -> (expr, symtbl, tokens, r)
-                             )
-             in
-               let (expr, tokens',r) = (case c of
-                                          Ras_Char_const _ -> ((Mediate_code_raw_Literal (Char_const c)), ts, Nothing)
-                                          _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
-                                       )
+             ((row,col), CHR_CONST c) ->
+               let (expr, tokens', r) = (case c of
+                                           Ras_Char_const _ -> ((Mediate_code_raw_Literal (Char_const c)), ts, Nothing)
+                                           _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                        )
                in
-                 par_goes_on_chr (expr, symtbl, tokens', r)
-           ((row, col), LPAR) -> let (expr, symtbl', tokens', r) = (par_expr symtbl ts)
-                                 in
-                                   case r of
-                                     Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
-                                     Nothing -> (case expr of
-                                                   Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                   _ -> (case tokens' of
-                                                           [] -> (expr, symtbl', [], Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
-                                                           ((row', col'), RPAR):ts' -> ((Mediate_code_raw_Par expr), symtbl', ts', Nothing)
-                                                           _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
-                                                        )
-                                                )
-           _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
-        )
+                 par_goes_on_str (expr, symtbl, tokens', r)
+             ((row, col), LPAR) -> let (expr, symtbl', tokens', r) = (par_expr Nothing symtbl ts)
+                                   in
+                                     case r of
+                                       Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
+                                       Nothing -> (case expr of
+                                                     Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                     _ -> (case tokens' of
+                                                             [] -> (expr, symtbl', [], Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
+                                                             ((row', col'), RPAR):ts' -> par_goes_on_num ((Mediate_code_raw_Par expr), symtbl', ts', Nothing)
+                                                             _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
+                                                          )
+                                                  )
+             _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
+          )
 
 
 par_asgn symtbl ((row, col), ident) tokens =
@@ -1185,7 +1182,7 @@ par_asgn symtbl ((row, col), ident) tokens =
                                                    )
                      _ -> (expr_asgn, symtbl, Just [(Par_error ((row, col), Expr_no_valid_lvalue))])
              in
-               (case (par_expr symtbl ts) of
+               (case (par_expr Nothing symtbl ts) of
                   (expr_r, symtbl', tokens', r) -> let fr_asgn' = fr_asgn{operand_1 = expr_r}
                                                in
                                                  if (r == Nothing) then
@@ -1209,7 +1206,7 @@ par_asgn symtbl ((row, col), ident) tokens =
       in
         (case tokens of
            [] -> ([fr_asgn], symtbl, [], (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
-           ((row', col'), ASGN):ts -> (case (par_expr symtbl ts) of
+           ((row', col'), ASGN):ts -> (case (par_expr Nothing symtbl ts) of
                                          (expr_r, symtbl', ts', r) -> ([fr_asgn{operand_1 = expr_r}], symtbl', ts', (err_lhs_notdefined r))
                                       )
            _ -> ([fr_asgn], symtbl, tokens, (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_asgn))])))
