@@ -323,7 +323,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
   )
 
 
-typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, by type inference. -}
+typecheck ((row, col), tk_code) expr = {- Updating types of each sub-expr. in given expr, by type inference. -}
   ras_trace "in typecheck" (
   case expr of
     {- If e1 : T1, e2 : T2, and T2 <: T1, then (e1:T1 := e2:T2) : T1. -}
@@ -332,16 +332,16 @@ typecheck (row, col) expr = {- Updating types of each sub-expr. in given expr, b
                             rvalue = operand_1 expr
                         in
                           case lvalue of
-                            Mediate_code_raw_Var var -> let ty_l = tyinf lvalue
-                                                            ty_r = tyinf rvalue
-                                                        in
-                                                          if (ty_l == Ras_Bottom_type) then
-                                                            let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
-                                                            in
-                                                              (expr{operand_0 = lvalue'}, Nothing)
-                                                          else
-                                                            if (is_subtype ty_r ty_l) then (expr, Nothing)
-                                                            else (expr, Just [(Par_error ((row, col), Tycon_mismatched))])
+                            Mediate_code_raw_Var var@(Mediate_var_attr {..}) -> let ty_l = tyinf lvalue
+                                                                                    ty_r = tyinf rvalue
+                                                                                in
+                                                                                  if (ty_l == Ras_Bottom_type) then
+                                                                                    let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
+                                                                                    in
+                                                                                      (expr{operand_0 = lvalue'}, Nothing)
+                                                                                  else
+                                                                                    if (is_subtype ty_r ty_l) then (expr, Nothing)
+                                                                                    else (expr, Just [(Par_error (var_coord, Tycon_mismatched))])
                             _ -> ras_assert False (expr, Just [(Par_error ((row, col), Compiler_internal_error))])
       | otherwise -> (expr, Nothing)
     _ -> (expr, Nothing)
@@ -866,11 +866,11 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                let init (row_c, col_c) c = pairing . (\(Mediate_code_raw_Var v) -> Mediate_code_raw_Var (v{var_attr = Var_attr_const ((row_c, col_c), c)}))
                in
                  case (case tokens of
-                         ((row, col), (BOOL_CONST b)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Boolean_const b))) vars)), tokens)
-                         ((row, col), (CHR_CONST c)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Char_const c))) vars)), tokens)
-                         ((row, col), (STR_CONST s)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (String_const s))) vars)), tokens)
-                         ((row, col), (NUM_CONST n)):ts -> (def_and_reg symtbl (folding (map ((typecheck (row, col)) . (init (row, col) (Numeric_const n))) vars)), tokens)
-                         ((row, col), _):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens0)
+                         (t@((row, col), (BOOL_CONST b))):ts -> (def_and_reg symtbl (folding (map ((typecheck t) . (init (row, col) (Boolean_const b))) vars)), tokens)
+                         (t@((row, col), (CHR_CONST c))):ts -> (def_and_reg symtbl (folding (map ((typecheck t) . (init (row, col) (Char_const c))) vars)), tokens)
+                         (t@((row, col), (STR_CONST s))):ts -> (def_and_reg symtbl (folding (map ((typecheck t) . (init (row, col) (String_const s))) vars)), tokens)
+                         (t@((row, col), (NUM_CONST n))):ts -> (def_and_reg symtbl (folding (map ((typecheck t) . (init (row, col) (Numeric_const n))) vars)), tokens)
+                         (t@((row, col), _)):ts -> ((symtbl, vars, Just [(Par_error ((row, col), Illformed_Declarement))]), tokens0)
                          _ -> ((symtbl, vars, Just [(Par_error ((row0, col0), Illformed_Declarement))]), tokens0) ) of
                    ((symtbl', vars', err), tokens') -> (symtbl', vars', tokens', err)
     _ -> (symtbl, [], tokens0, Nothing)
@@ -1169,43 +1169,44 @@ par_expr pre_ope symtbl tokens =
           )
 
 
-par_asgn symtbl ((row, col), ident) tokens =
+par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn)) tokens =
   ras_trace "in par_asgn" (
-  case (sym_lookup_var symtbl Cat_Sym_decl ident) of
+  case (ras_assert (tk_asgn == ASGN) (sym_lookup_var symtbl Cat_Sym_decl ident)) of
     Just (sig, attr) ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = Mediate_code_fragment_raw_None}
+          pos_ident = var_coord sig
       in
         case tokens of
-          [] -> ([fr_asgn], symtbl, [], Just [(Par_error ((row, col), Expr_no_valid_rvalue))])
+          [] -> ([fr_asgn], symtbl, [], Just [(Par_error (pos_ident, Expr_no_valid_rvalue))])
           _ -> (let update symtbl expr_asgn@(Mediate_code_raw_Bin {operand_0 = lvalue}) =
                       case lvalue of
                         Mediate_code_raw_Var var -> let (symtbl', r) = sym_regist True symtbl Cat_Sym_decl (Sym_var var) lvalue
                                                     in
                                                       case r of
                                                         Nothing -> (expr_asgn, symtbl', Nothing)
-                                                        Just err -> assert False (expr_asgn, symtbl', Just [(Par_error ((row, col), Compiler_internal_error))])
-                        _ -> (expr_asgn, symtbl, Just [(Par_error ((row, col), Expr_no_valid_lvalue))])
+                                                        Just err -> assert False (expr_asgn, symtbl', Just [(Par_error ((row_ident, col_ident), Compiler_internal_error))])
+                        _ -> (expr_asgn, symtbl, Just [(Par_error ((row_asgn, col_asgn), Expr_no_valid_lvalue))])
                 in
                   case (par_expr Nothing symtbl tokens) of
                     (expr_r, symtbl', tokens', r) -> let fr_asgn' = fr_asgn{operand_1 = expr_r}
                                                      in
-                                                       case (typecheck (row, col) fr_asgn') of
+                                                       case (typecheck ((row_ident, col_ident), IDENT ident) fr_asgn') of
                                                          (fr_asgn', Nothing) -> (case (update symtbl fr_asgn') of
-                                                                                   (fr_asgn', symtbl', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
+                                                                                   (fr_asgn'', symtbl'', r'') -> ([fr_asgn''], symtbl'', tokens', (append_error r r''))
                                                                                 )
                                                          (fr_asgn', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
                )
     Nothing ->
       let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = Mediate_code_fragment_raw_None, operand_1 = Mediate_code_fragment_raw_None}
           err_lhs_notdefined errors =
-            let err = Par_error ((row, col), Symbol_notdefined)
+            let err = Par_error ((row_ident, col_ident), Symbol_notdefined)
             in
               case errors of
                 Nothing -> Just [err]
                 Just es -> Just (err:es)
       in
         case tokens of
-          [] -> ([fr_asgn], symtbl, [], (err_lhs_notdefined (Just [(Par_error ((row, col), Expr_no_valid_rvalue))])))
+          [] -> ([fr_asgn], symtbl, [], (err_lhs_notdefined (Just [(Par_error ((row_asgn, col_asgn), Expr_no_valid_rvalue))])))
           _ -> (case (par_expr Nothing symtbl tokens) of
                   (expr_r, symtbl', tokens', r) -> ([fr_asgn{operand_1 = expr_r}], symtbl', tokens', (err_lhs_notdefined r))
                )
@@ -1229,7 +1230,7 @@ ras_parse forest symtbl tokens error =
                                                           in
                                                             ((forest ++ [expr]), symtbl', tokens', (add_error (append_error error r) (Par_error ((row, col), Expr_has_no_effect))))
                                                          )
-                                                   ((row', col'), ASGN):ts' -> go_on (par_asgn symtbl ((row, col), v_ident) ts')
+                                                   (t'@((row', col'), ASGN)):ts' -> go_on (par_asgn symtbl (((row, col), v_ident), t') ts')
                                                 )
                  -- ((row, col), RECORD) ->
                  _ -> ras_parse forest symtbl (panicked tokens) error
