@@ -28,6 +28,7 @@ data Ras_Error =
 
 data Ras_compiling_err =
   Par_error ((Int, Int), Ras_Error)
+  | Typ_error ((Int, Int), Ras_Error)
   deriving (Eq, Ord, Show)
 
 
@@ -307,17 +308,21 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
 tyinf expr = {- obtaining the type of expr, with type inference. -}
   ras_trace "in tyinf" (
   case expr of
+    Mediate_code_raw_Par expr' -> tyinf expr'
     Mediate_code_raw_Literal c -> (case c of
                                      Boolean_const c' -> Ras_Boolean
                                      Char_const c' -> Ras_Char
                                      String_const c' -> Ras_String
                                      Numeric_const c' -> (case c' of
                                                             Ras_Integer_const c_i -> Ras_Integer
-                                                            Ras_Real_const c_r -> Ras_Real )
+                                                            Ras_Real_const c_r -> Ras_Real
+                                                            _ -> ras_assert False Ras_Unknown_type
+                                                         )
                                      Record_const _ -> Ras_Unknown_type
                                      _ -> Ras_Unknown_type
                                   )
     Mediate_code_raw_Var var -> var_type var
+    
     Mediate_code_fragment_raw_None -> Ras_Bottom_type
     _ -> Ras_Unknown_type
   )
