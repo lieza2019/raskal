@@ -286,7 +286,7 @@ data Mediate_code_fragment_raw =
   | Mediate_code_raw_Una Mediate_code_mnemonic Mediate_code_fragment_raw
   | Mediate_code_raw_Bin {mnemonic :: Mediate_code_mnemonic, operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Var Mediate_var_attr
-  | Mediate_code_raw_Literal Ras_Const
+  | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
   | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   | Mediate_code_fragment_raw_None
   deriving (Eq, Ord, Show)
@@ -309,22 +309,21 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
   ras_trace "in tyinf" (
   case expr of
     Mediate_code_raw_Par expr' -> tyinf expr'
-    Mediate_code_raw_Literal c -> (case c of
-                                     Boolean_const c' -> Ras_Boolean
-                                     Char_const c' -> Ras_Char
-                                     String_const c' -> Ras_String
-                                     Numeric_const c' -> (case c' of
-                                                            Ras_Integer_const c_i -> Ras_Integer
-                                                            Ras_Real_const c_r -> Ras_Real
-                                                            _ -> ras_assert False Ras_Unknown_type
-                                                         )
-                                     Record_const _ -> Ras_Unknown_type
-                                     _ -> Ras_Unknown_type
-                                  )
-    Mediate_code_raw_Var var -> var_type var
-    
-    Mediate_code_fragment_raw_None -> Ras_Bottom_type
-    _ -> Ras_Unknown_type
+    Mediate_code_raw_Literal (pos,c) -> (case c of
+                                           Boolean_const c' -> (Ras_Boolean, Nothing)
+                                           Char_const c' -> (Ras_Char, Nothing)
+                                           String_const c' -> (Ras_String, Nothing)
+                                           Numeric_const c' -> (case c' of
+                                                                  Ras_Integer_const c_i -> (Ras_Integer, Nothing)
+                                                                  Ras_Real_const c_r -> (Ras_Real, Nothing)
+                                                                  _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
+                                                               )
+                                           Record_const _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
+                                           _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
+                                        )
+    Mediate_code_raw_Var var -> ((var_type var), Nothing)
+    Mediate_code_fragment_raw_None -> (Ras_Bottom_type, Nothing)
+    _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error((-1, -1), Tycon_mismatched)])
   )
 
 
@@ -337,16 +336,18 @@ typecheck ((row, col), tk_code) expr = {- Updating types of each sub-expr. in gi
                             rvalue = operand_1 expr
                         in
                           case lvalue of
-                            Mediate_code_raw_Var var@(Mediate_var_attr {..}) -> let ty_l = tyinf lvalue
-                                                                                    ty_r = tyinf rvalue
+                            Mediate_code_raw_Var var@(Mediate_var_attr {..}) -> let (ty_l, r_l) = tyinf lvalue
+                                                                                    (ty_r, r_r) = tyinf rvalue
                                                                                 in
-                                                                                  if (ty_l == Ras_Bottom_type) then
-                                                                                    let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
-                                                                                    in
-                                                                                      (expr{operand_0 = lvalue'}, Nothing)
-                                                                                  else
-                                                                                    if (is_subtype ty_r ty_l) then (expr, Nothing)
-                                                                                    else (expr, Just [(Par_error (var_coord, Tycon_mismatched))])
+                                                                                  let r = append_error r_r r_l
+                                                                                  in
+                                                                                    if (ty_l == Ras_Bottom_type) then
+                                                                                      let lvalue' = Mediate_code_raw_Var var{var_type = ty_r}
+                                                                                      in
+                                                                                        (expr{operand_0 = lvalue'}, r)
+                                                                                    else
+                                                                                      if (is_subtype ty_r ty_l) then (expr, r)
+                                                                                      else (expr, (add_error r (Par_error (var_coord, Tycon_mismatched))))
                             _ -> ras_assert False (expr, Just [(Par_error ((row, col), Compiler_internal_error))])
       | otherwise -> (expr, Nothing)
     _ -> (expr, Nothing)
@@ -831,10 +832,10 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                    case val of
                      Mediate_code_raw_Var v@(Mediate_var_attr {var_attr = v_attr}) ->
                        (case v_attr of
-                          Var_attr_const (_, c) -> let lvalue = val
-                                                       rvalue = Mediate_code_raw_Literal c
-                                                   in
-                                                     Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+                          Var_attr_const (pos, c) -> let lvalue = val
+                                                         rvalue = Mediate_code_raw_Literal (pos, c)
+                                                     in
+                                                       Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
                           _ -> ras_assert False val
                        )
                      _ -> val
@@ -1138,23 +1139,26 @@ par_expr pre_ope symtbl tokens =
                                            )
              ((row,col), NUM_CONST n) ->
                let (expr, tokens', r) = (case n of
-                                           Ras_Integer_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
-                                           Ras_Real_const _ -> ((Mediate_code_raw_Literal (Numeric_const n)), ts, Nothing)
-                                           _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                           Ras_Integer_const _ -> ((Mediate_code_raw_Literal ((row, col), (Numeric_const n))), ts, Nothing)
+                                           Ras_Real_const _ -> ((Mediate_code_raw_Literal ((row, col), (Numeric_const n))), ts, Nothing)
+                                           _ -> ras_assert False ((Mediate_code_raw_Literal ((row, col), Ras_Const_not_defined)), tokens,
+                                                                  Just [(Par_error ((row, col), Compiler_internal_error))])
                                         )
                in
                  par_goes_on_num (expr, symtbl, tokens', r)
              ((row,col), STR_CONST s) ->
                let (expr, tokens', r) = (case s of
-                                           Ras_String_const _ -> ((Mediate_code_raw_Literal (String_const s)), ts, Nothing)
-                                           _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                           Ras_String_const _ -> ((Mediate_code_raw_Literal ((row, col), (String_const s))), ts, Nothing)
+                                           _ -> ras_assert False ((Mediate_code_raw_Literal ((row, col), Ras_Const_not_defined)), tokens,
+                                                                  Just [(Par_error ((row, col), Compiler_internal_error))])
                                         )
                in
                  par_goes_on_str (expr, symtbl, tokens', r)
              ((row,col), CHR_CONST c) ->
                let (expr, tokens', r) = (case c of
-                                           Ras_Char_const _ -> ((Mediate_code_raw_Literal (Char_const c)), ts, Nothing)
-                                           _ -> ras_assert False ((Mediate_code_raw_Literal Ras_Const_not_defined), tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                           Ras_Char_const _ -> ((Mediate_code_raw_Literal ((row, col), (Char_const c))), ts, Nothing)
+                                           _ -> ras_assert False ((Mediate_code_raw_Literal ((row, col), Ras_Const_not_defined)), tokens,
+                                                                  Just [(Par_error ((row, col), Compiler_internal_error))])
                                         )
                in
                  par_goes_on_str (expr, symtbl, tokens', r)
@@ -1255,7 +1259,6 @@ ras_parse forest symtbl tokens error =
   )
 
 
---main =
 main src =
   let lexicon = [("and", AND), ("array", ARRAY),
                  ("begin", BEGIN), ("boolean", BOOLEAN),
