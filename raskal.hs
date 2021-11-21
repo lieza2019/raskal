@@ -286,7 +286,7 @@ data Mediate_var_attr =
 data Mediate_code_fragment_raw =
   Mediate_code_raw_Par ((Int, Int), Mediate_code_mnemonic) Mediate_code_fragment_raw
   | Mediate_code_raw_Una ((Int, Int), Mediate_code_mnemonic) Mediate_code_fragment_raw
-  | Mediate_code_raw_Bin {mnemonic :: Mediate_code_mnemonic, operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
+  | Mediate_code_raw_Bin {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
   | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
@@ -333,7 +333,7 @@ typecheck ((row, col), tk_code) expr = {- Updating types of each sub-expr. in gi
   ras_trace "in typecheck" (
   case expr of
     {- If e1 : T1, e2 : T2, and T2 <: T1, then (e1:T1 := e2:T2) : T1. -}
-    Mediate_code_raw_Bin {mnemonic = m}
+    Mediate_code_raw_Bin {mnemonic = ((pos_m), m)}
       | m == Mn_asgn -> let lvalue = operand_0 expr
                             rvalue = operand_1 expr
                         in
@@ -837,7 +837,7 @@ par_init_on_decl symtbl reg vars tokens0@(((row0, col0), tk0):tokens) =
                           Var_attr_const (pos, c) -> let lvalue = val
                                                          rvalue = Mediate_code_raw_Literal (pos, c)
                                                      in
-                                                       Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = lvalue, operand_1 = rvalue}
+                                                       Mediate_code_raw_Bin {mnemonic = ((row0, col0), Mn_asgn), operand_0 = lvalue, operand_1 = rvalue}
                           _ -> ras_assert False val
                        )
                      _ -> val
@@ -1060,26 +1060,27 @@ par_expr pre_ope symtbl tokens =
       par_bin_expr expr1 symtbl tokens ((pos, tk_code), operator) =
         let assoc_l expr2=
               case expr2 of
-                Mediate_code_raw_Var _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
-                Mediate_code_raw_Literal _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
-                Mediate_code_raw_Par _ _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
-                Mediate_code_raw_Una _ _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
-                Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr2_0, operand_1 = expr2_1}
+                Mediate_code_raw_Var _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Literal _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Par _ _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Una _ _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Bin {mnemonic = (pos_m, m), operand_0 = expr2_0, operand_1 = expr2_1}
                   | ((m == Mn_add) || (m == Mn_sub)) -> let (expr2_0', r) = (assoc_l expr2_0)
                                                         in
-                                                          (Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr2_0', operand_1 = expr2_1}, r)
+                                                          (Mediate_code_raw_Bin {mnemonic = (pos_m, m), operand_0 = expr2_0', operand_1 = expr2_1}, r)
                   | ((m == Mn_mul) || (m == Mn_div)) -> if ((operator == Mn_add) || (operator == Mn_sub) || (operator == Mn_mod)) then
-                                                          (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
+                                                          (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
                                                         else
                                                           if ((operator == Mn_mul) || (operator == Mn_div)) then
                                                             let (expr2_0', r) = (assoc_l expr2_0)
                                                             in
-                                                              (Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr2_0', operand_1 = expr2_1}, r)
+                                                              (Mediate_code_raw_Bin {mnemonic = (pos_m, m), operand_0 = expr2_0', operand_1 = expr2_1}, r)
                                                           else
                                                             ras_assert False ((Mediate_code_fragment_raw_None (pos, tk_code)), Just (Par_error ((-1, -1), Compiler_internal_error)))
-                  | (m == Mn_mod) -> (Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr1, operand_1 = expr2}, Nothing)
+                  | (m == Mn_mod) -> (Mediate_code_raw_Bin {mnemonic = (pos_m, m), operand_0 = expr1, operand_1 = expr2}, Nothing)
                   | otherwise -> ras_assert False ((Mediate_code_fragment_raw_None (pos, tk_code)), Just (Par_error ((-1, -1), Compiler_internal_error)))
-                Mediate_code_fragment_raw_None (pos', _) -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Just (Par_error (pos', Expr_illformed_subexpr)))
+                Mediate_code_fragment_raw_None (pos', _) ->
+                  (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Just (Par_error (pos', Expr_illformed_subexpr)))
         in
           let (expr2, symtbl', tokens', r) = (par_expr Nothing symtbl tokens)
           in
@@ -1183,7 +1184,7 @@ par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn
   ras_trace "in par_asgn" (
   case (ras_assert (tk_asgn == ASGN) (sym_lookup_var symtbl Cat_Sym_decl ident)) of
     Just (sig, attr) ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (attr_fragment attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
           pos_ident = var_coord sig
       in
         case tokens of
@@ -1207,7 +1208,7 @@ par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn
                                                          (fr_asgn', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
                )
     Nothing ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (Mediate_code_fragment_raw_None ((row_ident, col_ident), (IDENT ident))),
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (Mediate_code_fragment_raw_None ((row_ident, col_ident), (IDENT ident))),
                                           operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
           err_lhs_notdefined errors =
             let err = Par_error ((row_ident, col_ident), Symbol_notdefined)
