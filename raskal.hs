@@ -18,6 +18,7 @@ data Ras_Error =
   | Typedef_redefinition
   | Typedef_illformed_declarement
   | Expr_illformed_subexpr
+  | Expr_illegal_expression
   | Expr_illegal_operation
   | Expr_no_valid_lvalue
   | Expr_no_valid_rvalue
@@ -310,7 +311,9 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
 tyinf expr = {- obtaining the type of expr, with type inference. -}
   ras_trace "in tyinf" (
   case expr of
-    Mediate_code_raw_Par {operand_0 = expr'} -> tyinf expr'
+    Mediate_code_raw_Par {mnemonic = (pos_m, m)} -> if (m == Mn_prec) then (tyinf (operand_0 expr))
+                                                    else
+                                                      ras_assert False (Ras_Unknown_type, Just [Typ_error(pos_m, Expr_illegal_operation)])
     Mediate_code_raw_Literal (pos,c) -> (case c of
                                            Boolean_const c' -> (Ras_Boolean, Nothing)
                                            Char_const c' -> (Ras_Char, Nothing)
@@ -321,11 +324,50 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                                                   _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
                                                                )
                                            Record_const _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
-                                           _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
+                                           _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error(pos, Expr_illegal_operation)])
                                         )
     Mediate_code_raw_Var var -> ((var_type var), Nothing)
+    Mediate_code_raw_Una {mnemonic = (pos_m, m)} -> let (ty_expr0, r') = tyinf (operand_0 expr)
+                                                    in
+                                                      if (m == Mn_neg) then
+                                                        (if (is_subtype ty_expr0 Ras_Real) then (ty_expr0, r')
+                                                         else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                        )
+                                                      else
+                                                        if ((m == Mn_preinc) || (m == Mn_pstinc) || (m == Mn_predec) || (m == Mn_pstdec)) then
+                                                          (if (ty_expr0 == Ras_Integer) then (Ras_Integer, r')
+                                                           else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                          )
+                                                        else
+                                                          ras_assert False (Ras_Unknown_type, Just [Typ_error(pos_m, Expr_illegal_operation)])
+    Mediate_code_raw_Bin {mnemonic = (pos_m, m)} -> let (ty_expr0, r_0) = tyinf (operand_0 expr)
+                                                        (ty_expr1, r_1) = tyinf (operand_1 expr)
+                                                    in
+                                                      let r' = append_error r_1 r_0
+                                                      in
+                                                        if ((m == Mn_add) || (m == Mn_sub) || (m == Mn_mul)) then
+                                                          if ((is_subtype ty_expr0 Ras_Real) && (is_subtype ty_expr1 Ras_Real)) then
+                                                            (if (is_subtype ty_expr0 ty_expr1) then (ty_expr1, r')
+                                                             else (if (is_subtype ty_expr1 ty_expr0) then (ty_expr0, r')
+                                                                   else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                                  )
+                                                            )
+                                                          else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                        else
+                                                          if (m == Mn_div) then
+                                                            if ((is_subtype ty_expr0 Ras_Real) && (is_subtype ty_expr1 Ras_Real)) then (Ras_Real, r')
+                                                            else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                          else
+                                                            if (m == Mn_mod) then
+                                                              if ((is_subtype ty_expr0 Ras_Real) && (is_subtype ty_expr1 Ras_Real)) then
+                                                                (if ((ty_expr0 == Ras_Integer) && (ty_expr1 == Ras_Integer)) then (Ras_Integer, r')
+                                                                 else (Ras_Real, r')
+                                                                )
+                                                              else (Ras_Bottom_type, Just [Typ_error(pos_m, Tycon_mismatched)])
+                                                            else
+                                                              ras_assert False (Ras_Unknown_type, Just [Typ_error(pos_m, Expr_illegal_operation)])
     Mediate_code_fragment_raw_None _  -> (Ras_Bottom_type, Nothing)
-    _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error((-1, -1), Tycon_mismatched)])
+    _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error((-1, -1), Expr_illegal_expression)])
   )
 
 
@@ -333,7 +375,7 @@ typecheck ((row, col), tk_code) expr = {- Updating types of each sub-expr. in gi
   ras_trace "in typecheck" (
   case expr of
     {- If e1 : T1, e2 : T2, and T2 <: T1, then (e1:T1 := e2:T2) : T1. -}
-    Mediate_code_raw_Bin {mnemonic = ((pos_m), m)}
+    Mediate_code_raw_Bin {mnemonic = (pos_m, m)}
       | m == Mn_asgn -> let lvalue = operand_0 expr
                             rvalue = operand_1 expr
                         in
@@ -1113,7 +1155,7 @@ par_expr pre_ope symtbl tokens =
                                    )
           in
             case pre_ope of
-              Just ((row, col), _) -> (expr, symtbl, tokens, (add_error r (Par_error ((row, col), Expr_illegal_operation))))
+              Just ((row, col), _) -> (expr, symtbl, tokens, (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
               Nothing -> goes_on
     in
       case tokens of
