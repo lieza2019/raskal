@@ -284,7 +284,7 @@ data Mediate_var_attr =
 
 data Mediate_code_fragment_raw =
   Mediate_code_raw_Par Mediate_code_fragment_raw
-  | Mediate_code_raw_Una Mediate_code_mnemonic Mediate_code_fragment_raw
+  | Mediate_code_raw_Una ((Int, Int), Mediate_code_mnemonic) Mediate_code_fragment_raw
   | Mediate_code_raw_Bin {mnemonic :: Mediate_code_mnemonic, operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
@@ -1125,7 +1125,7 @@ par_expr pre_ope symtbl tokens =
                                         Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
                                         Nothing -> (case expr of
                                                       Mediate_code_fragment_raw_None _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                      _ -> par_goes_on_num ((Mediate_code_raw_Una Mn_neg expr), symtbl', tokens', Nothing)
+                                                      _ -> par_goes_on_num ((Mediate_code_raw_Una ((row, col), Mn_neg) expr), symtbl', tokens', Nothing)
                                                    )
              ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
                                               Just (sig, attr) -> let expr1 = (attr_fragment attr)
