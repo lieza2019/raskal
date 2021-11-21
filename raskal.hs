@@ -284,7 +284,7 @@ data Mediate_var_attr =
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
-  Mediate_code_raw_Par ((Int, Int), Mediate_code_mnemonic) Mediate_code_fragment_raw
+  Mediate_code_raw_Par {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Una {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 ::  Mediate_code_fragment_raw}
   | Mediate_code_raw_Bin {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Var Mediate_var_attr
@@ -310,7 +310,7 @@ is_subtype ty1 ty2 = {- returns True if ty1 <: ty2, otherwise False. -}
 tyinf expr = {- obtaining the type of expr, with type inference. -}
   ras_trace "in tyinf" (
   case expr of
-    Mediate_code_raw_Par _ expr' -> tyinf expr'
+    Mediate_code_raw_Par {operand_0 = expr'} -> tyinf expr'
     Mediate_code_raw_Literal (pos,c) -> (case c of
                                            Boolean_const c' -> (Ras_Boolean, Nothing)
                                            Char_const c' -> (Ras_Char, Nothing)
@@ -1062,7 +1062,7 @@ par_expr pre_ope symtbl tokens =
               case expr2 of
                 Mediate_code_raw_Var _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Literal _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
-                Mediate_code_raw_Par _ _ -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
+                Mediate_code_raw_Par {..} -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Una {..} -> (Mediate_code_raw_Bin {mnemonic = (pos, operator), operand_0 = expr1, operand_1 = expr2}, Nothing)
                 Mediate_code_raw_Bin {mnemonic = (pos_m, m), operand_0 = expr2_0, operand_1 = expr2_1}
                   | ((m == Mn_add) || (m == Mn_sub)) -> let (expr2_0', r) = (assoc_l expr2_0)
@@ -1127,7 +1127,7 @@ par_expr pre_ope symtbl tokens =
                                         Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
                                         Nothing -> (case expr of
                                                       Mediate_code_fragment_raw_None _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                      _ -> par_goes_on_num ((Mediate_code_raw_Una {mnemonic = ((row, col), Mn_neg), operand_0 = expr}), symtbl', tokens', Nothing)
+                                                      _ -> par_goes_on_num (Mediate_code_raw_Una {mnemonic = ((row, col), Mn_neg), operand_0 = expr}, symtbl', tokens', Nothing)
                                                    )
              ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
                                               Just (sig, attr) -> let expr1 = (attr_fragment attr)
@@ -1172,7 +1172,8 @@ par_expr pre_ope symtbl tokens =
                                                      Mediate_code_fragment_raw_None _  -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
                                                      _ -> (case tokens' of
                                                              [] -> (expr, symtbl', [], Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
-                                                             ((row', col'), RPAR):ts' -> par_goes_on_num ((Mediate_code_raw_Par ((row, col), Mn_prec) expr), symtbl', ts', Nothing)
+                                                             ((row', col'), RPAR):ts' -> par_goes_on_num (Mediate_code_raw_Par {mnemonic = ((row, col), Mn_prec), operand_0 = expr},
+                                                                                                          symtbl', ts', Nothing)
                                                              _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
                                                           )
                                                   )
