@@ -154,6 +154,7 @@ data Token_codes =
   | STR_CONST String_const
   | SKIPPED String
   | PHONY
+  | EOT  -- End of Tokens
   deriving (Eq, Ord, Show)
 
 
@@ -288,7 +289,7 @@ data Mediate_code_fragment_raw =
   | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
   | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
-  | Mediate_code_fragment_raw_None
+  | Mediate_code_fragment_raw_None ((Int, Int), Token_codes)
   deriving (Eq, Ord, Show)
 
 
@@ -322,7 +323,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                            _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
                                         )
     Mediate_code_raw_Var var -> ((var_type var), Nothing)
-    Mediate_code_fragment_raw_None -> (Ras_Bottom_type, Nothing)
+    Mediate_code_fragment_raw_None _  -> (Ras_Bottom_type, Nothing)
     _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error((-1, -1), Tycon_mismatched)])
   )
 
@@ -1055,7 +1056,7 @@ par_expr pre_ope symtbl tokens =
                         (_, PERCENT) -> Just Mn_mod
                         _ -> Nothing
                      )
-      par_bin_expr expr1 symtbl tokens (((row, col), _), operator) =
+      par_bin_expr expr1 symtbl tokens ((pos, tk_code), operator) =
         let assoc_l expr2=
               case expr2 of
                 Mediate_code_raw_Var _ -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Nothing)
@@ -1074,11 +1075,10 @@ par_expr pre_ope symtbl tokens =
                                                             in
                                                               (Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr2_0', operand_1 = expr2_1}, r)
                                                           else
-                                                            ras_assert False (Mediate_code_fragment_raw_None, Just (Par_error ((-1, -1), Compiler_internal_error)))
+                                                            ras_assert False ((Mediate_code_fragment_raw_None (pos, tk_code)), Just (Par_error ((-1, -1), Compiler_internal_error)))
                   | (m == Mn_mod) -> (Mediate_code_raw_Bin {mnemonic = m, operand_0 = expr1, operand_1 = expr2}, Nothing)
-                  | otherwise -> ras_assert False (Mediate_code_fragment_raw_None, Just (Par_error ((-1, -1), Compiler_internal_error)))
-                Mediate_code_fragment_raw_None -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Just (Par_error ((row, col), Expr_illformed_subexpr)))
-                                                   
+                  | otherwise -> ras_assert False ((Mediate_code_fragment_raw_None (pos, tk_code)), Just (Par_error ((-1, -1), Compiler_internal_error)))
+                Mediate_code_fragment_raw_None (pos', _) -> (Mediate_code_raw_Bin {mnemonic = operator, operand_0 = expr1, operand_1 = expr2}, Just (Par_error (pos', Expr_illformed_subexpr)))
         in
           let (expr2, symtbl', tokens', r) = (par_expr Nothing symtbl tokens)
           in
@@ -1115,7 +1115,7 @@ par_expr pre_ope symtbl tokens =
               Nothing -> goes_on
     in
       case tokens of
-        [] -> (Mediate_code_fragment_raw_None, symtbl, [], Nothing)
+        [] -> ((Mediate_code_fragment_raw_None ((-1, -1), EOT)), symtbl, [], Nothing)
         t:ts ->
           (case t of
              ((row, col), CROSS) -> par_expr Nothing symtbl ts
@@ -1124,7 +1124,7 @@ par_expr pre_ope symtbl tokens =
                                       case r of
                                         Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
                                         Nothing -> (case expr of
-                                                      Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                      Mediate_code_fragment_raw_None _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
                                                       _ -> par_goes_on_num ((Mediate_code_raw_Una Mn_neg expr), symtbl', tokens', Nothing)
                                                    )
              ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
@@ -1132,10 +1132,10 @@ par_expr pre_ope symtbl tokens =
                                                                   in
                                                                     case expr1 of
                                                                       Mediate_code_raw_Var _ -> par_goes_on_num (expr1, symtbl, ts, Nothing)
-                                                                      Mediate_code_raw_typedef {..} -> (Mediate_code_fragment_raw_None, symtbl, tokens,
+                                                                      Mediate_code_raw_typedef {..} -> ((Mediate_code_fragment_raw_None t), symtbl, tokens,
                                                                                                         Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                                      _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
-                                              Nothing -> (Mediate_code_fragment_raw_None, symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
+                                                                      _ -> ((Mediate_code_fragment_raw_None t), symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                              Nothing -> ((Mediate_code_fragment_raw_None t), symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
                                            )
              ((row,col), NUM_CONST n) ->
                let (expr, tokens', r) = (case n of
@@ -1167,14 +1167,14 @@ par_expr pre_ope symtbl tokens =
                                      case r of
                                        Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
                                        Nothing -> (case expr of
-                                                     Mediate_code_fragment_raw_None -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
+                                                     Mediate_code_fragment_raw_None _  -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
                                                      _ -> (case tokens' of
                                                              [] -> (expr, symtbl', [], Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
                                                              ((row', col'), RPAR):ts' -> par_goes_on_num ((Mediate_code_raw_Par expr), symtbl', ts', Nothing)
                                                              _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_parentheses_mismatched))])
                                                           )
                                                   )
-             _ -> (Mediate_code_fragment_raw_None, symtbl, tokens, Nothing)
+             _ -> ((Mediate_code_fragment_raw_None t), symtbl, tokens, Nothing)
           )
 
 
@@ -1182,7 +1182,7 @@ par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn
   ras_trace "in par_asgn" (
   case (ras_assert (tk_asgn == ASGN) (sym_lookup_var symtbl Cat_Sym_decl ident)) of
     Just (sig, attr) ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = Mediate_code_fragment_raw_None}
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (attr_fragment attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
           pos_ident = var_coord sig
       in
         case tokens of
@@ -1206,7 +1206,8 @@ par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn
                                                          (fr_asgn', r') -> ([fr_asgn'], symtbl', tokens', (append_error r r'))
                )
     Nothing ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = Mediate_code_fragment_raw_None, operand_1 = Mediate_code_fragment_raw_None}
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = Mn_asgn, operand_0 = (Mediate_code_fragment_raw_None ((row_ident, col_ident), (IDENT ident))),
+                                          operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
           err_lhs_notdefined errors =
             let err = Par_error ((row_ident, col_ident), Symbol_notdefined)
             in
