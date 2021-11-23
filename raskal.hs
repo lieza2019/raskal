@@ -202,7 +202,7 @@ lex_main lexicon (row, col) src =
         in
           case src of
             [] -> (tk_buf, lookup "" cand, (row, col), [])
-            (c:cs) | delimiter c -> (tk_buf, lookup "" cand, (row, col), cs)
+            (c:cs) | delimiter c -> (tk_buf, lookup "" cand, (row, col), src)
                    | otherwise -> coding (tk_buf ++ [c]) (elim c cand) (row, col + 1) cs
   in
     case src of
