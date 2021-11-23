@@ -9,6 +9,36 @@ import Debug.Trace
 
 data Ras_Error =
   Illformed_Declarement
+  | Illformed_Declarement1
+  | Illformed_Declarement2
+  | Illformed_Declarement3
+  | Illformed_Declarement4
+  | Illformed_Declarement5
+  | Illformed_Declarement6
+  | Illformed_Declarement7
+  | Illformed_Declarement8
+  | Illformed_Declarement9
+  | Illformed_Declarement10
+  | Illformed_Declarement11
+  | Illformed_Declarement12
+  | Illformed_Declarement13
+  | Illformed_Declarement14
+  | Illformed_Declarement15
+  | Illformed_Declarement16
+  | Illformed_Declarement17
+  | Illformed_Declarement18
+  | Illformed_Declarement19
+  | Illformed_Declarement20
+  | Illformed_Declarement21
+  | Illformed_Declarement22
+  | Illformed_Declarement23
+  | Illformed_Declarement24
+  | Illformed_Declarement25
+  | Illformed_Declarement26
+  | Illformed_Declarement27
+  | Illformed_Declarement28
+  | Illformed_Declarement29
+  | Illformed_Declarement30
   | Tycon_mismatched
   | Symbol_notdefined
   | Symbol_redifinition
@@ -314,6 +344,7 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
     Mediate_code_raw_Par {mnemonic = (pos_m, m)} -> if (m == Mn_prec) then (tyinf (operand_0 expr))
                                                     else
                                                       ras_assert False (Ras_Unknown_type, Just [Typ_error(pos_m, Expr_illegal_operation)])
+                                                      
     Mediate_code_raw_Literal (pos,c) -> (case c of
                                            Boolean_const c' -> (Ras_Boolean, Nothing)
                                            Char_const c' -> (Ras_Char, Nothing)
