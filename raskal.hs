@@ -270,6 +270,29 @@ lex_main lexicon (row, col) src =
                                                         | otherwise -> (NUM_CONST (Ras_Integer_const acc), (row, col), src)
   )
 
+lex src =
+    let lexicon = [("and", AND), ("array", ARRAY),
+                   ("begin", BEGIN), ("boolean", BOOLEAN),
+                   ("case", CASE), ("char", CHAR), ("const", CONST),
+                   ("div", DIV), ("do", DO), ("downto", DOWNTO),
+                   ("else", ELSE), ("end", END),
+                   ("false", FALSE), ("file", FILE), ("for", FOR), ("function", FUNCTION),
+                   ("goto", GOTO),
+                   ("if", IF), ("in", IN), ("integer", INTEGER),
+                   ("label", LABEL),
+                   ("mod", MOD),
+                   ("nil", NIL), ("not", NOT),
+                   ("of", OF), ("or", OR),
+                   ("packed", PACKED), ("procedure", PROCEDURE), ("program", PROGRAM),
+                   ("real", REAL), ("record", RECORD), ("real", REAL), ("repeat", REPEAT),
+                   ("set", SET), ("string", STRING),
+                   ("then", THEN), ("to", TO), ("true", TRUE), ("type", TYPE),
+                   ("until", UNTIL),
+                   ("var", VAR),
+                   ("while", WHILE), ("with", WITH)]
+    in
+      lex_main lexicon (1, 1) src
+  
 
 par_real_const tk_past tokens =
   ras_trace "in par_real_const" (
@@ -1336,47 +1359,51 @@ ras_parse forest symtbl tokens error =
   )
 
 
-main src =
-  let lexicon = [("and", AND), ("array", ARRAY),
-                 ("begin", BEGIN), ("boolean", BOOLEAN),
-                 ("case", CASE), ("char", CHAR), ("const", CONST),
-                 ("div", DIV), ("do", DO), ("downto", DOWNTO),
-                 ("else", ELSE), ("end", END),
-                 ("false", FALSE), ("file", FILE), ("for", FOR), ("function", FUNCTION),
-                 ("goto", GOTO),
-                 ("if", IF), ("in", IN), ("integer", INTEGER),
-                 ("label", LABEL),
-                 ("mod", MOD),
-                 ("nil", NIL), ("not", NOT),
-                 ("of", OF), ("or", OR),
-                 ("packed", PACKED), ("procedure", PROCEDURE), ("program", PROGRAM),
-                 ("real", REAL), ("record", RECORD), ("real", REAL), ("repeat", REPEAT),
-                 ("set", SET), ("string", STRING),
-                 ("then", THEN), ("to", TO), ("true", TRUE), ("type", TYPE),
-                 ("until", UNTIL),
-                 ("var", VAR),
-                 ("while", WHILE), ("with", WITH)]
+ras_emit locals forest symtbl =
+  let wat_type var_type =
+        case var_type of
+          Ras_Top_type -> "wat_invalid"
+          Ras_Boolean -> "wat_invalid"
+          Ras_Integer -> "i64"
+          Ras_Real -> "f64"
+          Ras_String -> "wat_invalid"
+          Ras_Char -> "wat_invalid"
+          Ras_Record _ -> "wat_invalid"
+          Ras_Typedef _ -> "wat_invalid"
+          Ras_Bottom_type -> "wat_invalid"
+          Ras_Unknown_type -> "wat_invalid"
+          Ras_Illformed_type -> "wat_invalid"
+          _ -> "wat_invalid"
   in
-    do
-      {-
-      tokens <- return (case (lex_main lexicon (1,1) "type { RECORD = record {i: integer} }") of
-                          [] -> []
-                          ts -> if ( (length ts) > (length (lex_purge ts)) ) then [] else ts
-                       ) -}
-      tokens <- return (case (lex_main lexicon (1,1) src) of
-                          [] -> []
-                          ts -> if ( (length ts) > (length (lex_purge ts)) ) then [] else ts
-                       )
-      tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
-      return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
+    case forest of
+      [] -> locals
+      t:ts -> let local =(case t of
+                            Mediate_code_raw_Var Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_attr = v_attr} ->
+                              "(local " ++ ("$" ++ v_id) ++ " " ++ (wat_type v_ty) ++ ")"
+                            _ -> ""
+                         )
               in
-                (tokens', ras_parse [] symtbl tokens' Nothing)
-             )
-        where
-          lex_purge tokens = case tokens of
-                               [] -> []
-                               (_, SKIPPED _):ts -> lex_purge ts
-                               (t:ts) -> t:(lex_purge ts)
+                ras_emit ((if (locals == []) then [] else (locals ++ [" "])) ++ [local]) ts symtbl
+
+main src =
+  do
+    tokens <- return (case (lex src) of
+                        [] -> []
+                        ts -> if ( (length ts) > (length (lex_purge ts)) ) then [] else ts
+                     )
+    tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
+    return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
+             in
+              --(tokens', ras_parse [] symtbl tokens' Nothing)
+              case (ras_parse [] symtbl tokens' Nothing) of
+                (forest, symtbl, _, Nothing) -> "(func " ++ (concat (ras_emit [] forest symtbl)) ++ ")"
+                _ -> ""
+           )
+      where
+        lex_purge tokens = case tokens of
+                             [] -> []
+                             (_, SKIPPED _):ts -> lex_purge ts
+                             (t:ts) -> t:(lex_purge ts)
 
 
 -- main "var a :: record { alpha :: integer; beta :: string }"
