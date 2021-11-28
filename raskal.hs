@@ -1359,7 +1359,7 @@ ras_parse forest symtbl tokens error =
   )
 
 
-ras_emit locals forest symtbl =
+ras_emit_var_decl local_decls forest symtbl =
   let wat_type var_type =
         case var_type of
           Ras_Top_type -> "wat_invalid"
@@ -1376,14 +1376,23 @@ ras_emit locals forest symtbl =
           _ -> "wat_invalid"
   in
     case forest of
-      [] -> locals
-      t:ts -> let local =(case t of
-                            Mediate_code_raw_Var Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_attr = v_attr} ->
-                              "(local " ++ ("$" ++ v_id) ++ " " ++ (wat_type v_ty) ++ ")"
-                            _ -> ""
-                         )
+      [] -> (local_decls, [])
+      t:ts -> let (lvar_decl, (v_id, v_attr))  = (case t of
+                                                    Mediate_code_raw_Var Mediate_var_attr {var_ident = v_id, var_type = v_ty, var_attr = v_attr} ->
+                                                      (("(local " ++ ("$" ++ v_id) ++ " " ++ (wat_type v_ty) ++ ")"), (v_id, v_attr))
+                                                    _ -> ("", (v_id, v_attr))
+                                                 )
               in
-                ras_emit ((if (locals == []) then [] else (locals ++ [" "])) ++ [local]) ts symtbl
+                let (local_decls', local_inits') = ras_emit_var_decl ((if (local_decls == []) then [] else (local_decls ++ [" "])) ++ [lvar_decl]) ts symtbl
+                in
+                  case v_attr of
+                    Var_attr_const (_, (Numeric_const (Ras_Integer_const n))) -> let lvar_init = ("(i64.const " ++ (show n) ++ ")") ++ ("(local.set " ++ ("$" ++ v_id) ++ ")")
+                                                                                 in
+                                                                                   let local_inits'' = [lvar_init] ++ (if (local_inits' == []) then [] else ([" "] ++ local_inits'))
+                                                                                   in
+                                                                                     (local_decls', local_inits'')
+                    _ -> (local_decls', local_inits')
+
 
 main src =
   do
@@ -1396,7 +1405,9 @@ main src =
              in
               --(tokens', ras_parse [] symtbl tokens' Nothing)
               case (ras_parse [] symtbl tokens' Nothing) of
-                (forest, symtbl, _, Nothing) -> "(func " ++ (concat (ras_emit [] forest symtbl)) ++ ")"
+                (forest, symtbl, _, Nothing) -> let (local_decls, local_inits) = ras_emit_var_decl [] forest symtbl
+                                                in
+                                                  "(func " ++ (concat local_decls) ++ " " ++ (concat local_inits) ++ ")"
                 _ -> ""
            )
       where
