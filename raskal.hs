@@ -47,6 +47,7 @@ data Ras_Error =
   | Typedef_invalid_synon_type
   | Typedef_redefinition
   | Typedef_illformed_declarement
+  | Decl_illegal_construct
   | Expr_illformed_subexpr
   | Expr_illegal_expression
   | Expr_illegal_operation
@@ -387,7 +388,6 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
     Mediate_code_raw_Par {mnemonic = (pos_m, m)} -> if (m == Mn_prec) then (tyinf (operand_0 expr))
                                                     else
                                                       ras_assert False (Ras_Unknown_type, Just [Typ_error(pos_m, Expr_illegal_operation)])
-                                                      
     Mediate_code_raw_Literal (pos,c) -> (case c of
                                            Boolean_const c' -> (Ras_Boolean, Nothing)
                                            Char_const c' -> (Ras_Char, Nothing)
@@ -400,7 +400,10 @@ tyinf expr = {- obtaining the type of expr, with type inference. -}
                                            Record_const _ -> (Ras_Unknown_type, Just [Typ_error(pos, Tycon_mismatched)])
                                            _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error(pos, Expr_illegal_operation)])
                                         )
-    Mediate_code_raw_Var var -> ((var_type var), Nothing)
+    Mediate_code_raw_Var v_body -> (case v_body of
+                                      Mediate_var_attr {..} -> (var_type, Nothing)
+                                      _ -> ras_assert False (Ras_Unknown_type, Just [Typ_error((-1, -1), Decl_illegal_construct)])
+                                   )
     Mediate_code_raw_Una {mnemonic = (pos_m, m)} -> let (ty_expr0, r') = tyinf (operand_0 expr)
                                                     in
                                                       if (m == Mn_neg) then
