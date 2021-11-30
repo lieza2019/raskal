@@ -217,25 +217,35 @@ lex_main lexicon (row, col) src =
              | (c == ' ' || c == '\t') -> lex_main lexicon (row, col + 1) cs
              | c == '=' -> (case cs of
                               '=':cs' -> ((row, col), EQU):(lex_main lexicon (row, col + 2) cs')
-                              _ -> ((row, col), ASGN):(lex_main lexicon (row, col + 1) cs) )
+                              _ -> ((row, col), ASGN):(lex_main lexicon (row, col + 1) cs)
+                           )
              | c == ':' -> (case cs of
                               ':':cs' -> ((row, col), TYPED_AS):(lex_main lexicon (row, col + 2) cs')
                               '=':cs' -> ((row, col), DEF):(lex_main lexicon (row, col + 2) cs')
-                              _ -> ((row, col), COLON):(lex_main lexicon (row, col + 1) cs) )
+                              _ -> ((row, col), COLON):(lex_main lexicon (row, col + 1) cs)
+                           )
              | c == ';' -> ((row, col), SEMICOL):(lex_main lexicon (row, col + 1) cs)
              | c == ',' -> ((row, col), COMMA):(lex_main lexicon (row, col + 1) cs)
              | c == '.' -> ((row, col), DOT):(lex_main lexicon (row, col + 1) cs)
              | c == '+' -> (case cs of
-                              '+':cs' -> ((row, col), INCL):(lex_main lexicon (row, col + 2) cs')
-                              _ -> ((row, col), CROSS):(lex_main lexicon (row, col + 1) cs) )
+                              c':cs'
+                                | c' == '+' -> ((row, col), INCL):(lex_main lexicon (row, col + 2) cs')
+                                | (isDigit c') -> lex_const ( par_num_const (False, ((ord c') - (ord '0'))) ) (row, col + 2) cs'
+                                | otherwise -> ((row, col), CROSS):(lex_main lexicon (row, col + 1) cs)
+                              _ -> ((row, col), CROSS):(lex_main lexicon (row, col + 1) cs)
+                           )
              | c == '-' -> (case cs of
-                              '-':cs' -> ((row, col), DECL):(lex_main lexicon (row, col + 2) cs')
-                              _ -> ((row, col), MINUS):(lex_main lexicon (row, col + 1) cs) )
+                              c':cs'
+                                | c' == '-' -> ((row, col), DECL):(lex_main lexicon (row, col + 2) cs')
+                                | (isDigit c') -> lex_const ( par_num_const (True, (negate ((ord c') - (ord '0')))) ) (row, col + 2) cs'
+                                | otherwise -> ((row, col), MINUS):(lex_main lexicon (row, col + 1) cs)
+                              _ -> ((row, col), MINUS):(lex_main lexicon (row, col + 1) cs)
+                           )
              | c == '*' -> ((row, col), STAR):(lex_main lexicon (row, col + 1) cs)
              | c == '/' -> ((row, col), SLASH):(lex_main lexicon (row, col + 1) cs)
              | c == '\'' -> lex_const par_chr_const (row, col + 1) cs
              | c == '"' -> lex_const par_str_const (row, col + 1) cs
-             | (isDigit c) -> lex_const ( par_num_const ((ord c) - (ord '0')) ) (row, col + 1) cs
+             | (isDigit c) -> lex_const ( par_num_const (False, ((ord c) - (ord '0'))) ) (row, col + 1) cs
              | otherwise -> (case (coding "" lexicon (row, col) src) of
                                (tk_str, res, (row', col'), rem) -> (case res of
                                                                       Just tk_code ->
@@ -270,10 +280,12 @@ lex_main lexicon (row, col) src =
                         (res, str, (row', col'), rem) -> if res then (STR_CONST (Ras_String_const str), (row', col'), rem)
                                                          else (SKIPPED "\"", (row', col'), src) )
 
-          par_num_const acc (row, col) src = case src of
-                                               [] -> (NUM_CONST (Ras_Integer_const acc), (row, col), [])
-                                               (c':cs') | (isDigit c') -> (par_num_const ((acc * 10) + ((ord c') - (ord '0'))) (row, col + 1) cs')
-                                                        | otherwise -> (NUM_CONST (Ras_Integer_const acc), (row, col), src)
+          par_num_const (neg, acc) (row, col) src = let sign = if neg then negate else id
+                                                    in
+                                                      case src of
+                                                        [] -> (NUM_CONST (Ras_Integer_const acc), (row, col), [])
+                                                        (c':cs') | (isDigit c') -> (par_num_const (neg, ((acc * 10) + (sign ((ord c') - (ord '0'))))) (row, col + 1) cs')
+                                                                 | otherwise -> (NUM_CONST (Ras_Integer_const acc), (row, col), src)
   )
 
 lex src =
