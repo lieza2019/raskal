@@ -9,36 +9,6 @@ import Debug.Trace
 
 data Ras_Error =
   Illformed_Declarement
-  | Illformed_Declarement1
-  | Illformed_Declarement2
-  | Illformed_Declarement3
-  | Illformed_Declarement4
-  | Illformed_Declarement5
-  | Illformed_Declarement6
-  | Illformed_Declarement7
-  | Illformed_Declarement8
-  | Illformed_Declarement9
-  | Illformed_Declarement10
-  | Illformed_Declarement11
-  | Illformed_Declarement12
-  | Illformed_Declarement13
-  | Illformed_Declarement14
-  | Illformed_Declarement15
-  | Illformed_Declarement16
-  | Illformed_Declarement17
-  | Illformed_Declarement18
-  | Illformed_Declarement19
-  | Illformed_Declarement20
-  | Illformed_Declarement21
-  | Illformed_Declarement22
-  | Illformed_Declarement23
-  | Illformed_Declarement24
-  | Illformed_Declarement25
-  | Illformed_Declarement26
-  | Illformed_Declarement27
-  | Illformed_Declarement28
-  | Illformed_Declarement29
-  | Illformed_Declarement30
   | Tycon_mismatched
   | Symbol_notdefined
   | Symbol_redifinition
@@ -359,11 +329,11 @@ data Mediate_var_attr =
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
-  Mediate_code_raw_Par {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw}
+  Mediate_code_raw_Literal ((Int, Int), Ras_Const)
+  | Mediate_code_raw_Var Mediate_var_attr
+  | Mediate_code_raw_Par {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Una {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 ::  Mediate_code_fragment_raw}
   | Mediate_code_raw_Bin {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
-  | Mediate_code_raw_Var Mediate_var_attr
-  | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
   | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   | Mediate_code_fragment_raw_None ((Int, Int), Token_codes)
   deriving (Eq, Ord, Show)
@@ -498,7 +468,7 @@ data Sym_attr_type =
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
-  Sym_attrib {attr_decl :: Sym_attr_type, attr_fragment :: Mediate_code_fragment_raw}
+  Sym_attrib {attr_live :: ((Int, Int), Sym_attr_type), attr_decl :: Mediate_code_fragment_raw}
   deriving (Eq, Ord, Show)
 
 data Symtbl_node =
@@ -570,8 +540,8 @@ sym_lookup_var symtbl cat ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
-                                          Attrib_Var av -> Just (av, whole_attr)
+      Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
+                                          (pos, (Attrib_Var av)) -> Just (av, whole_attr)
                                           _ -> sym_lookup_var remainders cat ident )
   )
 
@@ -588,8 +558,8 @@ sym_lookup_rec symtbl cat ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
-                                          Attrib_Rec ar -> Just (ar, whole_attr)
+      Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
+                                          (pos, (Attrib_Rec ar)) -> Just (ar, whole_attr)
                                           _ -> sym_lookup_rec remainders cat ident )
   )
 
@@ -606,8 +576,8 @@ sym_lookup_typedef symtbl ident =
   in
     case trying of
       Nothing -> Nothing
-      Just (whole_attr, remainders) -> (case (attr_decl whole_attr) of
-                                          Attrib_Typedef at -> Just (at, whole_attr)
+      Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
+                                          (pos, (Attrib_Typedef at)) -> Just (at, whole_attr)
                                           _ -> sym_lookup_typedef remainders ident )
   )
 
@@ -621,17 +591,17 @@ sym_lookup_typedef_decl symtbl ident =
 walk_on_scope sym_cluster (kind, tgt_id) =
   ras_trace "in walk_on_scope" (
   let cmp_kind (Sym_entry {sym_body = attr}) =
-        let attr_type = attr_decl attr
+        let attr_type = attr_live attr
         in
           case kind of
             Sym_var _ -> (case attr_type of
-                            Attrib_Var _ -> True
+                            (pos, (Attrib_Var _)) -> True
                             _ -> False )
             Sym_typedef _ -> (case attr_type of
-                                Attrib_Typedef _ -> True
+                                (pos, (Attrib_Typedef _)) -> True
                                 _ -> False )
             Sym_record _  -> (case attr_type of
-                                Attrib_Rec _ -> True
+                                (pos, (Attrib_Rec _ ))-> True
                                 _ -> False )
   in
     case sym_cluster of
@@ -662,11 +632,13 @@ sym_regist ovwt symtbl cat entity fragment =
           in
             case entity of
               Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
-                reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_decl = Attrib_Var decl, attr_fragment = fragment}})
+                let pos = (-1, -1)
+                in
+                  reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Var decl)), attr_decl = fragment}})
               Sym_typedef (pos, tydef_id, tydef_defty) ->
-                reg_sym sym_tbl tydef_id (Sym_entry {sym_ident = tydef_id, sym_body = Sym_attrib {attr_decl = Attrib_Typedef (pos, tydef_id, tydef_defty), attr_fragment = fragment}})
+                reg_sym sym_tbl tydef_id (Sym_entry {sym_ident = tydef_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Typedef (pos, tydef_id, tydef_defty))), attr_decl = fragment}})
               Sym_record (pos, rec_id, fields) ->
-                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_decl = Attrib_Rec (pos, rec_id, fields), attr_fragment = fragment}})
+                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Rec (pos, rec_id, fields))), attr_decl = fragment}})
     in
       case sym_tbl' of
         (tbl', err) -> ((sym_update symtbl cat tbl'), err)
@@ -1263,20 +1235,11 @@ par_expr pre_ope symtbl tokens =
           t:ts ->
             (case t of
                ((row, col), INCL) -> par_una_expr symtbl ts (t, (tk2ope_una t))
-               --((row, col), CROSS) -> par_expr Nothing symtbl ts
                ((row, col), CROSS) -> par_una_expr symtbl ts (t, (tk2ope_una t))
-               {- ((row, col), MINUS) -> let (expr, symtbl', tokens', r) = (par_expr (Just t) symtbl ts)
-                                    in
-                                      case r of
-                                        Just err -> (expr, symtbl', tokens', (add_error r (Par_error ((row, col), Expr_illformed_subexpr))))
-                                        Nothing -> (case expr of
-                                                      Mediate_code_fragment_raw_None _ -> (expr, symtbl', tokens', Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                      _ -> par_goes_on_num (Mediate_code_raw_Una {mnemonic = ((row, col), Mn_neg), operand_0 = expr}, symtbl', tokens', Nothing)
-                                                   ) -}
                ((row, col), DECL) -> par_una_expr symtbl ts (t, (tk2ope_una t))
                ((row, col), MINUS) -> par_una_expr symtbl ts (t, (tk2ope_una t))
                ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
-                                                Just (sig, attr) -> let expr1 = (attr_fragment attr)
+                                                Just (sig, attr) -> let expr1 = (attr_decl attr)
                                                                     in
                                                                       case expr1 of
                                                                         Mediate_code_raw_Var _ -> par_goes_on_num (expr1, symtbl, ts, Nothing)
@@ -1331,7 +1294,7 @@ par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn
   ras_trace "in par_asgn" (
   case (ras_assert (tk_asgn == ASGN) (sym_lookup_var symtbl Cat_Sym_decl ident)) of
     Just (sig, attr) ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (attr_fragment attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (attr_decl attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
           pos_ident = var_coord sig
       in
         case tokens of
