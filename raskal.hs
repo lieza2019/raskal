@@ -541,7 +541,7 @@ sym_lookup_var symtbl cat ident =
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Var av)) -> Just (av, whole_attr)
+                                          (pos, (Attrib_Var av)) -> Just (av, attr_decl whole_attr)
                                           _ -> sym_lookup_var remainders cat ident )
   )
 
@@ -559,7 +559,7 @@ sym_lookup_rec symtbl cat ident =
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Rec ar)) -> Just (ar, whole_attr)
+                                          (pos, (Attrib_Rec ar)) -> Just (ar, attr_decl whole_attr)
                                           _ -> sym_lookup_rec remainders cat ident )
   )
 
@@ -577,7 +577,7 @@ sym_lookup_typedef symtbl ident =
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Typedef at)) -> Just (at, whole_attr)
+                                          (pos, (Attrib_Typedef at)) -> Just (at, attr_decl whole_attr)
                                           _ -> sym_lookup_typedef remainders ident )
   )
 
@@ -1239,13 +1239,7 @@ par_expr pre_ope symtbl tokens =
                ((row, col), DECL) -> par_una_expr symtbl ts (t, (tk2ope_una t))
                ((row, col), MINUS) -> par_una_expr symtbl ts (t, (tk2ope_una t))
                ((row, col), IDENT var_id) -> (case (sym_lookup_var symtbl Cat_Sym_decl var_id) of
-                                                Just (sig, attr) -> let expr1 = (attr_decl attr)
-                                                                    in
-                                                                      case expr1 of
-                                                                        Mediate_code_raw_Var _ -> par_goes_on_num (expr1, symtbl, ts, Nothing)
-                                                                        Mediate_code_raw_typedef {..} -> ((Mediate_code_fragment_raw_None t), symtbl, tokens,
-                                                                                                          Just [(Par_error ((row, col), Expr_illformed_subexpr))])
-                                                                        _ -> ((Mediate_code_fragment_raw_None t), symtbl, tokens, Just [(Par_error ((row, col), Compiler_internal_error))])
+                                                Just (attr, _) -> par_goes_on_num ((Mediate_code_raw_Var attr), symtbl, ts, Nothing)
                                                 Nothing -> ((Mediate_code_fragment_raw_None t), symtbl, tokens, Just [(Par_error ((row, col), Symbol_notdefined))])
                                              )
                ((row,col), NUM_CONST n) ->
@@ -1293,9 +1287,10 @@ par_expr pre_ope symtbl tokens =
 par_asgn symtbl (((row_ident, col_ident), ident), ((row_asgn, col_asgn), tk_asgn)) tokens =
   ras_trace "in par_asgn" (
   case (ras_assert (tk_asgn == ASGN) (sym_lookup_var symtbl Cat_Sym_decl ident)) of
-    Just (sig, attr) ->
-      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (attr_decl attr), operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
-          pos_ident = var_coord sig
+    Just (attr, _) ->
+      let fr_asgn = Mediate_code_raw_Bin {mnemonic = ((row_asgn, col_asgn), Mn_asgn), operand_0 = (Mediate_code_raw_Var attr),
+                                          operand_1 = (Mediate_code_fragment_raw_None ((-1, -1), EOT))}
+          pos_ident = var_coord attr
       in
         case tokens of
           [] -> ([fr_asgn], symtbl, [], Just [(Par_error (pos_ident, Expr_no_valid_rvalue))])
