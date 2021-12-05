@@ -471,7 +471,7 @@ data Sym_attr_type =
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
-  Sym_attrib {attr_live :: ((Int, Int), Sym_attr_type), attr_decl :: Mediate_code_fragment_raw}
+  Sym_attrib {attr_live :: [((Int, Int), Sym_attr_type)], attr_decl :: Mediate_code_fragment_raw}
   deriving (Eq, Ord, Show)
 
 data Symtbl_node =
@@ -517,13 +517,20 @@ sym_update symtbl cat tbl =
   )
 
 
-sym_search symtbl cat ident =
+sym_search symtbl cat pos ident =
   ras_trace "in sym_search" (
   let walk syms ident =
-        case syms of
-          Sym_empty -> Nothing
-          Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just (sym, syms')
-                               else walk syms' ident
+        let stamp (sym@Sym_entry{sym_body = attr}) = (case (attr_live attr) of
+                                                        [] -> ras_assert False sym
+                                                        (pos_prev, ty):as -> sym{sym_body = attr{attr_live = (pos, ty):((pos_prev, ty):as)}}
+                                                     )
+        in
+          case syms of
+            Sym_empty -> Nothing
+            Sym_add sym syms' -> if ((sym_ident sym) == ident) then Just ((sym, syms'), (Sym_add (stamp sym) syms'))
+                                 else case (walk syms' ident) of
+                                        Nothing -> Nothing
+                                        Just (r, stamped) -> Just (r, (Sym_add sym stamped))
   in
     let sym_tbl = sym_categorize symtbl cat
     in
@@ -531,21 +538,24 @@ sym_search symtbl cat ident =
         Scope_empty -> Nothing
         Scope_add (lv, anon_idents, syms) sym_tbl' ->
           (case (walk syms ident) of
-             Just (found, syms') -> Just ((sym_body found), sym_update symtbl cat (Scope_add (lv, anon_idents, syms') sym_tbl'))
-             Nothing -> sym_search (sym_update symtbl cat sym_tbl') cat ident
+             Just ((found, remainders), syms') -> Just (((sym_body found), (sym_update symtbl cat (Scope_add (lv, anon_idents, remainders) sym_tbl'))),
+                                                        (Scope_add (lv, anon_idents, syms') sym_tbl'))
+             Nothing -> case (sym_search (sym_update symtbl cat sym_tbl') cat pos ident) of
+                          Nothing -> Nothing
+                          Just (r, sym_tbl'') -> Just (r, (Scope_add (lv, anon_idents, syms) sym_tbl''))
           )
   )
 
 
-sym_lookup_var symtbl cat ident =
+sym_lookup_var symtbl cat pos ident =
   ras_trace "in sym_lookup_var" (
-  let trying = sym_search symtbl cat ident
+  let trying = sym_search symtbl cat pos ident
   in
     case trying of
       Nothing -> Nothing
-      Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Var av)) -> Just (av, attr_decl whole_attr)
-                                          _ -> sym_lookup_var remainders cat ident )
+      Just ((whole_attr, remainders), symtbl') -> (case (attr_live whole_attr) of
+                                                     (pos_prev, (Attrib_Var av)):as -> Just ((av, attr_decl whole_attr), symtbl')
+                                                     _ -> sym_lookup_var remainders cat pos ident )
   )
 
 
@@ -562,7 +572,7 @@ sym_lookup_rec symtbl cat ident =
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Rec ar)) -> Just (ar, attr_decl whole_attr)
+                                          (pos, (Attrib_Rec ar)):ls -> Just (ar, attr_decl whole_attr)
                                           _ -> sym_lookup_rec remainders cat ident )
   )
 
@@ -580,7 +590,7 @@ sym_lookup_typedef symtbl ident =
     case trying of
       Nothing -> Nothing
       Just (whole_attr, remainders) -> (case (attr_live whole_attr) of
-                                          (pos, (Attrib_Typedef at)) -> Just (at, attr_decl whole_attr)
+                                          (pos, (Attrib_Typedef at)):ls -> Just (at, attr_decl whole_attr)
                                           _ -> sym_lookup_typedef remainders ident )
   )
 
@@ -594,18 +604,19 @@ sym_lookup_typedef_decl symtbl ident =
 walk_on_scope sym_cluster (kind, tgt_id) =
   ras_trace "in walk_on_scope" (
   let cmp_kind (Sym_entry {sym_body = attr}) =
-        let attr_type = attr_live attr
-        in
-          case kind of
-            Sym_var _ -> (case attr_type of
-                            (pos, (Attrib_Var _)) -> True
-                            _ -> False )
-            Sym_typedef _ -> (case attr_type of
-                                (pos, (Attrib_Typedef _)) -> True
-                                _ -> False )
-            Sym_record _  -> (case attr_type of
-                                (pos, (Attrib_Rec _ ))-> True
-                                _ -> False )
+        case (attr_live attr) of
+          attr:as -> (case kind of
+                        Sym_var _ -> (case attr of
+                                        (pos, (Attrib_Var _)) -> True
+                                        _ -> False )
+                        Sym_typedef _ -> (case attr of
+                                            (pos, (Attrib_Typedef _)) -> True
+                                            _ -> False )
+                        Sym_record _  -> (case attr of
+                                            (pos, (Attrib_Rec _ ))-> True
+                                            _ -> False )
+                     )
+          _ -> False
   in
     case sym_cluster of
       Sym_empty -> Nothing
@@ -637,11 +648,11 @@ sym_regist ovwt symtbl cat entity fragment =
               Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
                 let pos = (-1, -1)
                 in
-                  reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Var decl)), attr_decl = fragment}})
+                  reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_live = [(pos, (Attrib_Var decl))], attr_decl = fragment}})
               Sym_typedef tydef_attr@(Ras_typedef_attr {..}) ->
-                reg_sym sym_tbl tydef_ident (Sym_entry {sym_ident = tydef_ident, sym_body = Sym_attrib {attr_live = (tydef_coord, (Attrib_Typedef tydef_attr)), attr_decl = fragment}})
+                reg_sym sym_tbl tydef_ident (Sym_entry {sym_ident = tydef_ident, sym_body = Sym_attrib {attr_live = [(tydef_coord, (Attrib_Typedef tydef_attr))], attr_decl = fragment}})
               Sym_record (pos, rec_id, fields) ->
-                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Rec (pos, rec_id, fields))), attr_decl = fragment}})
+                reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_live = [(pos, (Attrib_Rec (pos, rec_id, fields)))], attr_decl = fragment}})
     in
       case sym_tbl' of
         (tbl', err) -> ((sym_update symtbl cat tbl'), err)
