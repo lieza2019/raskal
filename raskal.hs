@@ -62,11 +62,13 @@ append_error err1 err2 =
 data Ras_typedef_attr = Ras_typedef_attr {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   deriving (Eq, Ord, Show)
 
+
 data Ras_Record_field =
   Ras_Record_field {memb_coord :: (Int, Int), memb_ident :: String, memb_type :: Ras_Types}
   deriving (Eq, Ord, Show)
 
 type Ras_Record_attr = ((Int, Int), String, [Ras_Record_field])
+
 
 data Ras_Types =
   Ras_Top_type
@@ -336,7 +338,6 @@ data Mediate_code_fragment_raw =
   | Mediate_code_raw_Par {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw}
   | Mediate_code_raw_Una {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 ::  Mediate_code_fragment_raw}
   | Mediate_code_raw_Bin {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw, operand_1 :: Mediate_code_fragment_raw}
-  -- | Mediate_code_raw_typedef {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   | Mediate_code_fragment_raw_None ((Int, Int), Token_codes)
   deriving (Eq, Ord, Show)
 
