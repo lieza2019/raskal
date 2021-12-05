@@ -59,8 +59,7 @@ append_error err1 err2 =
                    Just es2 -> Just (es1 ++ es2) )
 
 
---type Ras_typedef_attr = ((Int, Int), String, Ras_Types)
-data Ras_typedef_attr0 = Ras_typedef_attr0 {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
+data Ras_typedef_attr = Ras_typedef_attr {tydef_coord :: (Int, Int), tydef_ident :: String, tydef_deftype :: Ras_Types}
   deriving (Eq, Ord, Show)
 
 data Ras_Record_field =
@@ -77,7 +76,7 @@ data Ras_Types =
   | Ras_String
   | Ras_Char
   | Ras_Record Ras_Record_attr
-  | Ras_Typedef Ras_typedef_attr0
+  | Ras_Typedef Ras_typedef_attr
   | Ras_Bottom_type
   | Ras_Unknown_type
   | Ras_Illformed_type
@@ -331,7 +330,7 @@ data Mediate_var_attr =
   deriving (Eq, Ord, Show)
 
 data Mediate_code_fragment_raw =
-  Mediate_code_raw_typedef Ras_typedef_attr0
+  Mediate_code_raw_typedef Ras_typedef_attr
   | Mediate_code_raw_Literal ((Int, Int), Ras_Const)
   | Mediate_code_raw_Var Mediate_var_attr
   | Mediate_code_raw_Par {mnemonic :: ((Int, Int), Mediate_code_mnemonic), operand_0 :: Mediate_code_fragment_raw}
@@ -460,14 +459,14 @@ data Sym_category =
 
 data Sym_entity =
   Sym_var Mediate_var_attr
-  | Sym_typedef Ras_typedef_attr0
+  | Sym_typedef Ras_typedef_attr
   | Sym_record Ras_Record_attr
     deriving (Eq, Ord, Show)
 
 data Sym_attr_type =
   Attrib_Var Mediate_var_attr
   | Attrib_Rec Ras_Record_attr
-  | Attrib_Typedef Ras_typedef_attr0
+  | Attrib_Typedef Ras_typedef_attr
   deriving (Eq, Ord, Show)
 
 data Sym_attrib =
@@ -638,7 +637,7 @@ sym_regist ovwt symtbl cat entity fragment =
                 let pos = (-1, -1)
                 in
                   reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Var decl)), attr_decl = fragment}})
-              Sym_typedef tydef_attr@(Ras_typedef_attr0 {..}) ->
+              Sym_typedef tydef_attr@(Ras_typedef_attr {..}) ->
                 reg_sym sym_tbl tydef_ident (Sym_entry {sym_ident = tydef_ident, sym_body = Sym_attrib {attr_live = (tydef_coord, (Attrib_Typedef tydef_attr)), attr_decl = fragment}})
               Sym_record (pos, rec_id, fields) ->
                 reg_sym sym_tbl rec_id (Sym_entry {sym_ident = rec_id, sym_body = Sym_attrib {attr_live = (pos, (Attrib_Rec (pos, rec_id, fields))), attr_decl = fragment}})
@@ -710,7 +709,7 @@ leave_scope symtbl cat =
 
 par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
   let par_tydef_body acc symtbl tokens0'@(((row0', col0'), tk0'):tokens') =
-        let tydef_attr = Ras_typedef_attr0 {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
+        let tydef_attr = Ras_typedef_attr {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type}
             fragment = Mediate_code_raw_typedef tydef_attr
             acc' = acc ++ [fragment]
         in
@@ -735,7 +734,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                             (r_ident, symtbl', tokens'', err) -> (Nothing, symtbl', tokens'', err)
                                          )
                       (pos, IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
-                                                  Just (Ras_typedef_attr0 {tydef_coord = pos', tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
+                                                  Just (Ras_typedef_attr {tydef_coord = pos', tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
                                                     (case (ras_assert (ty_ident' == ty_ident) deftype) of
                                                        Ras_Typedef _ -> assert False (Nothing, symtbl, ts', Just [Par_error (pos, Compiler_internal_error)])
                                                        ty | ((ty == Ras_Bottom_type) || (ty == Ras_Unknown_type) || (ty == Ras_Illformed_type)) ->
@@ -749,7 +748,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                 (case ts' of
                    t':_ -> (case (tk2ty t') of
                                (Just ty, symtbl', tokens'', Nothing) ->
-                                 let entity = Sym_typedef (Ras_typedef_attr0 {tydef_coord = (row_i, col_i), tydef_ident = t_ident, tydef_deftype = ty})
+                                 let entity = Sym_typedef (Ras_typedef_attr {tydef_coord = (row_i, col_i), tydef_ident = t_ident, tydef_deftype = ty})
                                      tydef_attr'' = tydef_attr'{tydef_deftype = ty}
                                      fragment'' = Mediate_code_raw_typedef tydef_attr''
                                      acc' = acc ++ [fragment'']
@@ -787,7 +786,7 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
             ((row_i, col_i), _):ts' -> (acc', symtbl, tokens', Just [(Par_error ((row_i, col_i), Typedef_no_synon_name))])
             _ -> (acc', symtbl, tokens', Just [(Par_error ((row0', col0'), Typedef_illformed_declarement))])
   in
-    let fragment = Mediate_code_raw_typedef (Ras_typedef_attr0 {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type})
+    let fragment = Mediate_code_raw_typedef (Ras_typedef_attr {tydef_coord = (row0, col0), tydef_ident = "", tydef_deftype = Ras_Unknown_type})
     in
       case (assert (tk0 == TYPE) tokens) of
         (_, LBRA):ts -> (case ts of
@@ -819,7 +818,7 @@ par_record symtbl qual@(Ras_Record ((r_decl, c_decl), _, _)) tokens0@(((row0, co
                        (_, symtbl', tokens', err) -> (Ras_Illformed_type, (leave_scope symtbl' Cat_Sym_record), tokens', err)
                     )
                 (pos, IDENT ty_ident):ts -> (case (sym_lookup_typedef symtbl ty_ident) of
-                                               Just (Ras_typedef_attr0 {tydef_coord = pos', tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
+                                               Just (Ras_typedef_attr {tydef_coord = pos', tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
                                                  (case (ras_assert (ty_ident' == ty_ident) deftype) of
                                                     Ras_Typedef _ -> assert False (Ras_Illformed_type, symtbl, tokens, Just [Par_error (pos, Compiler_internal_error)])
                                                     ty | ((ty == Ras_Bottom_type) || (ty == Ras_Unknown_type) || (ty == Ras_Illformed_type)) ->
@@ -1119,9 +1118,9 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                )
                                                           )
                                                       ((row'', col''), IDENT ty_ident) -> (case (sym_lookup_typedef symtbl ty_ident) of
-                                                                                             Just (Ras_typedef_attr0 {tydef_coord = pos, tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
+                                                                                             Just (Ras_typedef_attr {tydef_coord = pos, tydef_ident = ty_ident', tydef_deftype = deftype}, _) ->
                                                                                                (case (ras_assert (ty_ident' == ty_ident) deftype) of
-                                                                                                  Ras_Typedef (Ras_typedef_attr0 {..}) ->
+                                                                                                  Ras_Typedef (Ras_typedef_attr {..}) ->
                                                                                                     ras_assert False (vars, symtbl, ts', Just [(Par_error (tydef_coord, Compiler_internal_error))])
                                                                                                   Ras_Record (pos, r_ident, r_fields) ->
                                                                                                     (case (par_init_on_decl symtbl True (reveal_rec symtbl r_ident vars) ts') of
