@@ -524,7 +524,8 @@ sym_search symtbl cat kind (pos, ident) =
   let walk syms ident =
         let stamp (sym@Sym_entry{sym_body = attr}) = (case (attr_live attr) of
                                                         [] -> ras_assert False sym
-                                                        (pos_prev, ty):as -> sym{sym_body = attr{attr_live = (pos, ty):((pos_prev, ty):as)}}
+                                                        (pos_prev, ty):as -> sym{sym_body = attr{attr_live = (if (cat == Cat_Sym_decl) then (pos, ty):((pos_prev, ty):as)
+                                                                                                              else ((pos_prev, ty):as))}}                                                      
                                                      )
         in
           case syms of
@@ -746,7 +747,8 @@ par_typedef symtbl tokens0@(((row0, col0), tk0):tokens) =
                                          (case (par_record symtbl qual ts') of
                                             (r_ident, symtbl', tokens'', Nothing) -> (case (sym_lookup_rec_decl symtbl' pos r_ident) of
                                                                                         Just ((r_attr, _), symtbl'') -> (Just (Ras_Record r_attr), symtbl'', tokens'', Nothing)
-                                                                                        Nothing -> ras_assert False (Nothing, symtbl', tokens'', Just [Par_error (pos, Compiler_internal_error)]) )
+                                                                                        Nothing -> ras_assert False (Nothing, symtbl', tokens'', Just [Par_error (pos, Compiler_internal_error)])
+                                                                                     )
                                             (r_ident, symtbl', tokens'', err) -> (Nothing, symtbl', tokens'', err)
                                          )
                       (pos, IDENT ty_ident) -> (case (sym_lookup_typedef_decl symtbl pos ty_ident) of
@@ -1123,12 +1125,11 @@ par_var acc symtbl tokens0@(((row0, col0), tk0):tokens) =
                                                                (case err of
                                                                   Nothing ->
                                                                     (case (sym_lookup_rec_decl symtbl' (row'', col'') r_ident) of
-                                                                       Just (r_fields, r_attr) ->
-                                                                         let (symtbl', vars') = reveal_rec symtbl' ((row'', col''), r_ident) vars
-                                                                         in
-                                                                           (case (par_init_on_decl symtbl' True vars' us') of
-                                                                              (symtbl'', vars'', tokens', err') -> (vars'', symtbl'', tokens', err')
-                                                                           )
+                                                                       Just _ -> let (symtbl'', vars') = reveal_rec symtbl' ((row'', col''), r_ident) vars
+                                                                                 in
+                                                                                   (case (par_init_on_decl symtbl'' True vars' us') of
+                                                                                      (symtbl''', vars'', tokens', err') -> (vars'', symtbl''', tokens', err')
+                                                                                   )
                                                                        Nothing -> ras_assert False (vars, symtbl', us', Just [(Par_error ((row'', col''), Compiler_internal_error))])
                                                                     )
                                                                   _ -> (vars, symtbl', us', err)
