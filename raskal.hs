@@ -7,6 +7,7 @@ import Data.Char
 import Debug.Trace
 
 
+
 data Ras_Error =
   Illformed_Declarement
   | Tycon_mismatched
@@ -264,7 +265,7 @@ lex_main lexicon (row, col) src =
                                                                  | otherwise -> (NUM_CONST (Ras_Integer_const acc), (row, col), src)
   )
 
-lex src =
+ras_lex src =
     let lexicon = [("and", AND), ("array", ARRAY),
                    ("begin", BEGIN), ("boolean", BOOLEAN),
                    ("case", CASE), ("char", CHAR), ("const", CONST),
@@ -650,10 +651,8 @@ sym_regist ovwt symtbl cat entity fragment =
           let sym_tbl = sym_categorize symtbl cat
           in
             case entity of
-              Sym_var decl@(Mediate_var_attr {var_ident = v_id}) ->
-                let pos = (-1, -1)
-                in
-                  reg_sym sym_tbl v_id (Sym_entry {sym_ident = v_id, sym_body = Sym_attrib {attr_live = [(pos, (Attrib_Var decl))], attr_decl = fragment}})
+              Sym_var decl@(Mediate_var_attr {..}) ->
+                reg_sym sym_tbl var_ident (Sym_entry {sym_ident = var_ident, sym_body = Sym_attrib {attr_live = [(var_coord, (Attrib_Var decl))], attr_decl = fragment}})
               Sym_typedef tydef_attr@(Ras_typedef_attr {..}) ->
                 reg_sym sym_tbl tydef_ident (Sym_entry {sym_ident = tydef_ident, sym_body = Sym_attrib {attr_live = [(tydef_coord, (Attrib_Typedef tydef_attr))], attr_decl = fragment}})
               Sym_record (pos, rec_id, fields) ->
@@ -1427,26 +1426,29 @@ ras_emit_var_decl local_decls forest symtbl =
                     _ -> (local_decls', local_inits')
 
 
-main src =
+main =
   do
-    tokens <- return (case (lex src) of
+    let src = "var a :: integer := 2"
+    tokens <- return (case (ras_lex src) of
                         [] -> []
                         ts -> if ( (length ts) > (length (lex_purge ts)) ) then [] else ts
                      )
     tokens' <- return (par_real_const ((-1, -1), PHONY) tokens)
-    return (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
-             in
-              (tokens', ras_parse [] symtbl tokens' Nothing)
-              {- case (ras_parse [] symtbl tokens' Nothing) of
-                (forest, symtbl, _, Nothing) -> let (local_decls, local_inits) = ras_emit_var_decl [] forest symtbl
-                                                in
-                                                  let func_decl = "(func " ++ (concat local_decls) ++ " "
-                                                  in
-                                                    let local_vars_init = (concat local_inits)
-                                                    in
-                                                      "(module " ++ (func_decl ++ local_vars_init ++ ")") ++ ")"
-                _ -> "" -}
-           )
+    out <- return (show (let symtbl = Symtbl {sym_typedef = Scope_empty, sym_func = Scope_empty, sym_record = Scope_empty, sym_decl = Scope_empty}
+                         in
+                           --(tokens', ras_parse [] symtbl tokens' Nothing)
+                           case (ras_parse [] symtbl tokens' Nothing) of
+                             (forest, symtbl, _, Nothing) -> let (local_decls, local_inits) = ras_emit_var_decl [] forest symtbl
+                                                             in
+                                                               let func_decl = "(func " ++ (concat local_decls) ++ " "
+                                                               in
+                                                                 let local_vars_init = (concat local_inits)
+                                                                 in
+                                                                   "(module \n\t" ++ (func_decl ++ local_vars_init ++ ")") ++ ")"
+                             _ -> ""
+                        )
+                  )
+    print out
       where
         lex_purge tokens = case tokens of
                              [] -> []
